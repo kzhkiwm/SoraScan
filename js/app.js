@@ -790,6 +790,7 @@ class SoraScanApp {
       const formattedSerial = Storage.formatSerialForDisplay(item.serial);
       const isUsed = item.status === 'used';
       const campTitle = item.campaignTitle || item.singleTitle || '';
+      const safeApplyUrl = Storage.sanitizeUrl(item.applyUrl || '');
 
       card.innerHTML = `
         <div class="serial-info">
@@ -803,8 +804,8 @@ class SoraScanApp {
           </div>
         </div>
         <div class="serial-card-actions">
-          ${item.applyUrl ? `
-            <button class="btn-card-visit" title="シリアルをコピーして応募サイトを開く" data-serial="${item.serial}" data-url="${item.applyUrl}">
+          ${safeApplyUrl ? `
+            <button class="btn-card-visit" title="シリアルをコピーして応募サイトを開く" data-serial="${item.serial}" data-url="${this.escapeHtml(safeApplyUrl)}">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                 <polyline points="15 3 21 3 21 9"></polyline>
@@ -839,9 +840,14 @@ class SoraScanApp {
       if (btnVisit) {
         btnVisit.addEventListener('click', (e) => {
           e.stopPropagation();
+          const targetUrl = Storage.sanitizeUrl(item.applyUrl);
+          if (!targetUrl) {
+            this.showToast('⚠️ 登録されている応募URLが無効または安全ではありません');
+            return;
+          }
           navigator.clipboard.writeText(item.serial).then(() => {
             this.showToast(`📋 ${formattedSerial} をコピーし、公式応募サイトを開きます`);
-            window.open(item.applyUrl, '_blank', 'noopener,noreferrer');
+            window.open(targetUrl, '_blank', 'noopener,noreferrer');
           });
         });
       }
@@ -976,13 +982,18 @@ class SoraScanApp {
       card.className = `campaign-item-card ${isActive ? 'is-active' : ''}`;
 
       const stats = Storage.getStats(c.id);
+      const safeCampUrl = Storage.sanitizeUrl(c.applyUrl || '');
 
       card.innerHTML = `
         <div class="campaign-item-info">
           <div class="campaign-item-title">${this.escapeHtml(c.title)}</div>
-          <a href="${this.escapeHtml(c.applyUrl || '#')}" target="_blank" rel="noopener noreferrer" class="campaign-item-url" title="${this.escapeHtml(c.applyUrl || '')}">
-            🔗 ${this.escapeHtml(c.applyUrl || 'URL未設定')}
-          </a>
+          ${safeCampUrl ? `
+            <a href="${this.escapeHtml(safeCampUrl)}" target="_blank" rel="noopener noreferrer" class="campaign-item-url" title="${this.escapeHtml(safeCampUrl)}">
+              🔗 ${this.escapeHtml(safeCampUrl)}
+            </a>
+          ` : `
+            <span class="campaign-item-url" style="opacity:0.6;">🔗 URL未設定または無効</span>
+          `}
           <div class="campaign-item-meta">
             ${isActive ? '<span class="badge-active-campaign">選択中</span>' : ''}
             <span>登録: <b>${stats.total}</b>枚 (未応募: <b>${stats.unused}</b>枚)</span>
@@ -1051,12 +1062,18 @@ class SoraScanApp {
       return;
     }
 
+    const safeUrl = Storage.sanitizeUrl(applyUrl);
+    if (!safeUrl) {
+      this.showToast('⚠️ 有効な応募URL（http:// または https://）を入力してください');
+      return;
+    }
+
     if (editId) {
-      Storage.updateCampaign(editId, { title, shortTitle, applyUrl, period });
+      Storage.updateCampaign(editId, { title, shortTitle, applyUrl: safeUrl, period });
       if (setActive) Storage.setActiveCampaignId(editId);
       this.showToast(`作品「${shortTitle || title}」を更新しました`);
     } else {
-      const created = Storage.addCampaign({ title, shortTitle, applyUrl, period });
+      const created = Storage.addCampaign({ title, shortTitle, applyUrl: safeUrl, period });
       if (setActive) Storage.setActiveCampaignId(created.id);
       this.showToast(`🎉 作品「${shortTitle || title}」を登録しました！`);
     }

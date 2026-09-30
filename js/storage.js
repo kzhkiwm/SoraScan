@@ -131,6 +131,25 @@ export const Storage = {
   },
 
   /**
+   * 安全なHTTP/HTTPS URLか検証し、安全なら正規化されたURLを、不正または危険なプロトコルなら空文字を返す
+   * @param {string} urlStr
+   * @returns {string}
+   */
+  sanitizeUrl(urlStr) {
+    if (!urlStr || typeof urlStr !== 'string') return '';
+    const trimmed = urlStr.trim();
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        return parsed.href;
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  },
+
+  /**
    * 新しい作品（シングル・アルバム）を追加
    */
   addCampaign(data) {
@@ -148,11 +167,13 @@ export const Storage = {
       }
     }
 
+    const safeUrl = this.sanitizeUrl(data.applyUrl || '');
+
     const newCampaign = {
       id,
       title: data.title.trim(),
       shortTitle: shortTitle.trim(),
-      applyUrl: (data.applyUrl || '').trim(),
+      applyUrl: safeUrl,
       period: (data.period || '').trim(),
       createdAt: new Date().toISOString()
     };
@@ -169,6 +190,10 @@ export const Storage = {
     const campaigns = this.getCampaigns();
     const idx = campaigns.findIndex(c => c.id === id);
     if (idx === -1) return null;
+
+    if (updates.applyUrl !== undefined) {
+      updates.applyUrl = this.sanitizeUrl(updates.applyUrl);
+    }
 
     campaigns[idx] = { ...campaigns[idx], ...updates };
     this.saveCampaigns(campaigns);
@@ -436,7 +461,10 @@ export const Storage = {
           const currentCampaigns = this.getCampaigns();
           parsed.campaigns.forEach(c => {
             if (c.id && !currentCampaigns.some(cc => cc.id === c.id)) {
-              currentCampaigns.push(c);
+              currentCampaigns.push({
+                ...c,
+                applyUrl: this.sanitizeUrl(c.applyUrl || '')
+              });
               importedCampaignsCount++;
             }
           });
@@ -470,7 +498,7 @@ export const Storage = {
             campaignId: item.campaignId || activeCamp.id,
             campaignTitle: item.campaignTitle || item.singleTitle || activeCamp.title,
             singleTitle: item.singleTitle || activeCamp.title,
-            applyUrl: item.applyUrl || activeCamp.applyUrl,
+            applyUrl: this.sanitizeUrl(item.applyUrl || activeCamp.applyUrl || ''),
             status: item.status || 'unused',
             scanMethod: item.scanMethod || 'import',
             createdAt: item.createdAt || new Date().toISOString(),
