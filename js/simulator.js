@@ -5,12 +5,12 @@
 
 export const TicketSimulator = {
   /**
-   * ランダムな16桁シリアルコード（4桁×4ブロック）を生成
+   * ランダムな14文字シリアルコード（英大文字・数字・ハイフンなし）を生成
    */
   generateRandomSerial() {
-    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // 紛らわしい 0, O, 1, I を除外した本格的なコード体系
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
     let result = '';
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 14; i++) {
       result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return result;
@@ -103,13 +103,12 @@ export const TicketSimulator = {
     // ボックス内ラベル
     ctx.fillStyle = '#64748B';
     ctx.font = 'bold 14px "Noto Sans JP", sans-serif';
-    ctx.fillText('▼ シリアルコード（英数字16桁）', boxX + 24, boxY + 36);
+    ctx.fillText('▼ シリアルナンバー（英数字14文字・ハイフンなし）', boxX + 24, boxY + 36);
 
-    // シリアルナンバー本体（4桁ハイフン区切り）
-    const formattedSerial = serial.match(/.{1,4}/g).join('-');
+    // シリアルナンバー本体（ハイフンなしの連続14文字）
+    const formattedSerial = serial.replace(/[^A-Z0-9]/gi, '').toUpperCase();
     ctx.fillStyle = '#0F172A';
     ctx.font = 'bold 44px "Courier New", monospace, sans-serif';
-    ctx.letterSpacing = '3px';
     ctx.fillText(formattedSerial, boxX + 24, boxY + 95);
 
     // 6. QRコード領域

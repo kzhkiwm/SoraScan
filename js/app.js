@@ -90,6 +90,7 @@ class SoraScanApp {
     this.btnBackupExport = document.getElementById('btnBackupExport');
     this.fileBackupImport = document.getElementById('fileBackupImport');
     this.btnClearAllSerials = document.getElementById('btnClearAllSerials');
+    this.inputGeminiApiKey = document.getElementById('inputGeminiApiKey');
 
     // トースト
     this.toastContainer = document.getElementById('toastContainer');
@@ -126,6 +127,9 @@ class SoraScanApp {
     this.checkContinuous.checked = !!settings.continuousScan;
     this.checkSoundEnabled.checked = settings.soundEnabled !== false;
     this.checkVibrationEnabled.checked = settings.vibrationEnabled !== false;
+    if (this.inputGeminiApiKey) {
+      this.inputGeminiApiKey.value = settings.geminiApiKey || '';
+    }
 
     // 一覧表示と統計の更新
     this.renderList();
@@ -277,6 +281,14 @@ class SoraScanApp {
       Storage.saveSettings({ vibrationEnabled: e.target.checked });
     });
 
+    if (this.inputGeminiApiKey) {
+      this.inputGeminiApiKey.addEventListener('change', (e) => {
+        const val = e.target.value.trim();
+        Storage.saveSettings({ geminiApiKey: val });
+        this.showToast(val ? '✨ Gemini AI高精度認識が有効になりました' : '端末内OCRモードに切り替えました');
+      });
+    }
+
     // バックアップ書き出し
     this.btnBackupExport.addEventListener('click', () => {
       const jsonStr = Storage.exportAsJSON();
@@ -426,8 +438,10 @@ class SoraScanApp {
     `;
 
     try {
+      const apiKey = Storage.getSettings().geminiApiKey;
       const res = await this.scanner.captureAndRecognize(this.videoElement, {
-        cropToGuide: true
+        cropToGuide: true,
+        geminiApiKey: apiKey
       });
 
       if (!res.bestSerial) {
@@ -460,8 +474,10 @@ class SoraScanApp {
     this.showToast('アップロード画像を解析中...');
 
     try {
+      const apiKey = Storage.getSettings().geminiApiKey;
       const res = await this.scanner.captureAndRecognize(file, {
-        cropToGuide: false
+        cropToGuide: false,
+        geminiApiKey: apiKey
       });
 
       if (!res.bestSerial) {
@@ -525,19 +541,29 @@ class SoraScanApp {
   }
 
   /**
-   * モーダル入力中の重複チェック検証
+   * モーダル入力中の重複チェック & 14文字カウンター検証
    */
   validateModalDuplicate() {
     const rawVal = this.modalSerialInput.value;
     const clean = Storage.normalizeSerial(rawVal);
     const existing = Storage.checkDuplicate(clean, this.pendingRecord?.id);
 
+    // 14文字カウンターの更新
+    const counter = document.getElementById('modalCharCounter');
+    if (counter) {
+      if (clean.length === 14) {
+        counter.innerHTML = `<span style="color:#10B981;">✓ 14 / 14文字（日向坂46正規仕様）</span>`;
+      } else {
+        counter.innerHTML = `<span style="color:#F59E0B;">文字数: ${clean.length} / 14文字</span>`;
+      }
+    }
+
     if (existing) {
       this.modalDuplicateAlert.style.display = 'flex';
       this.modalSerialInput.style.borderColor = '#EF4444';
     } else {
       this.modalDuplicateAlert.style.display = 'none';
-      this.modalSerialInput.style.borderColor = 'var(--sky-blue)';
+      this.modalSerialInput.style.borderColor = clean.length === 14 ? '#10B981' : 'var(--sky-blue)';
     }
   }
 

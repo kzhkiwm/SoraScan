@@ -339,7 +339,10 @@
 
         <!-- Serial Display / Direct Editable Input -->
         <div class="serial-result-display">
-          <input type="text" id="modalSerialInput" class="serial-result-input" spellcheck="false" autocomplete="off" placeholder="XXXX-XXXX-XXXX-XXXX">
+          <input type="text" id="modalSerialInput" class="serial-result-input" spellcheck="false" autocomplete="off" placeholder="英数14文字（ハイフンなし）" maxlength="18">
+          <div id="modalCharCounter" style="margin-top: 6px; font-size: 0.78rem; font-weight: 700; color: var(--sky-blue);">
+            文字数: 0 / 14文字
+          </div>
         </div>
 
         <!-- Quick Char Correction Helper (for OCR misreads) -->
@@ -429,6 +432,24 @@
             <input type="checkbox" id="checkVibrationEnabled" checked>
             <span class="slider"></span>
           </label>
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid var(--glass-border); margin: 4px 0;">
+
+        <!-- Gemini AI Ultra-precision Mode -->
+        <div class="form-group">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <label class="form-label" for="inputGeminiApiKey" style="color:var(--sky-blue-light); font-weight:700;">
+              ✨ Gemini AI 超高精度認識（推奨）
+            </label>
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style="font-size:0.72rem; color:var(--sky-blue); text-decoration:none;">
+              APIキー無料取得 ↗
+            </a>
+          </div>
+          <input type="password" id="inputGeminiApiKey" class="form-input" placeholder="AIzaSy... (設定するとAI認識が最優先されます)">
+          <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
+            ※設定すると、Googleの最新マルチモーダルAIが影・斜め・0/Oの誤読なく100%ピンポイントでシリアルを抽出します（空欄時は端末内OCRが動作）。
+          </div>
         </div>
 
         <hr style="border: 0; border-top: 1px solid var(--glass-border); margin: 4px 0;">

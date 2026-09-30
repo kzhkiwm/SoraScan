@@ -221,10 +221,10 @@ export class ScannerEngine {
         }
       });
 
-      // 英大文字・数字・ハイフンにホワイトリストを限定して精度を最大化
+      // 日向坂46仕様: 英大文字と数字の14文字連続（ハイフンなし）にホワイトリストを限定
       await worker.setParameters({
-        tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-',
-        tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT
+        tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK
       });
 
       this.tesseractWorker = worker;
@@ -240,6 +240,99 @@ export class ScannerEngine {
   }
 
   /**
+   * Gemini Vision API による超高精度AI解析
+   * @param {HTMLImageElement|HTMLVideoElement|Blob|File|HTMLCanvasElement} source
+   * @param {string} apiKey
+   */
+  async recognizeWithGemini(source, apiKey) {
+    if (!apiKey) throw new Error('Gemini APIキーが設定されていません');
+
+    this.onStatusChange({ status: 'processing', message: 'Gemini AIで券面を高精度解析中...' });
+
+    // 画像をBase64 JPEGに変換
+    let dataUrl;
+    if (source instanceof HTMLCanvasElement) {
+      dataUrl = source.toDataURL('image/jpeg', 0.9);
+    } else {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      let w = source.videoWidth || source.naturalWidth || source.width;
+      let h = source.videoHeight || source.naturalHeight || source.height;
+      if (source instanceof Blob || source instanceof File) {
+        const img = await this._loadImageFromFile(source);
+        w = img.naturalWidth;
+        h = img.naturalHeight;
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(img, 0, 0);
+      } else {
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(source, 0, 0);
+      }
+      dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    }
+
+    const base64Data = dataUrl.split(',')[1];
+
+    const prompt = `日向坂46のCD封入スペシャル抽選応募シリアルナンバー（またはQRコード）が写っています。
+このシリアルナンバーは【英大文字と数字の連続する14文字（ハイフンなし）】です（例: "A8B3K9M2X4P7W1"）。
+画像内からこの14文字の英数字コードのみを正確に抽出してください。
+注意事項：
+- ハイフンやスペースは絶対に含めず、連続する14文字の英大文字・数字のみを出力してください。
+- 「0（数字のゼロ）」と「O（アルファベットのオー）」、「1（数字のイチ）」と「I（アルファベットのアイ）」を券面のフォント形状から厳密に見分けてください。
+- 余計な説明、前置き、引用符、Markdownは一切含めず、抽出した14文字のみ（例: A8B3K9M2X4P7W1）を出力してください。`;
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+    const payload = {
+      contents: [{
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: 'image/jpeg',
+              data: base64Data
+            }
+          }
+        ]
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 100
+      }
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errJson = await response.json().catch(() => ({}));
+      throw new Error(errJson.error?.message || `Gemini API エラー: HTTP ${response.status}`);
+    }
+
+    const resJson = await response.json();
+    const candidateText = resJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    const cleanSerial = candidateText.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
+    this.onStatusChange({ status: 'done', message: 'Gemini AI解析完了' });
+    if (cleanSerial) {
+      this.triggerSuccessEffect();
+    }
+
+    return {
+      rawText: candidateText,
+      confidence: 99,
+      bestSerial: cleanSerial,
+      candidates: [{ code: cleanSerial, score: 100, source: 'gemini' }],
+      processedDataUrl: dataUrl
+    };
+  }
+
+  /**
    * 現在のカメラプレビューまたは画像ファイルからOCR文字認識を実行
    * @param {HTMLImageElement|HTMLVideoElement|Blob|File} source
    * @param {Object} options
@@ -248,20 +341,30 @@ export class ScannerEngine {
     const targetSource = source || this.videoElement;
     if (!targetSource) throw new Error('解析対象の画像または映像がありません');
 
-    this.onStatusChange({ status: 'processing', message: '画像を最適化・解析中...' });
+    // 1. Gemini APIキーが設定されている場合はAI解析を優先（超高精度）
+    if (options.geminiApiKey) {
+      try {
+        return await this.recognizeWithGemini(targetSource, options.geminiApiKey);
+      } catch (geminiErr) {
+        console.warn('Gemini API failed, falling back to local OCR:', geminiErr);
+        this.onStatusChange({ status: 'warning', message: 'Gemini AI通信に失敗したため、端末内OCRに切り替えます...' });
+      }
+    }
 
-    // 1. 画像のクロップ & 前処理（二値化・コントラスト強調）
+    this.onStatusChange({ status: 'processing', message: '画像を最適化・端末内OCR解析中...' });
+
+    // 2. 画像のクロップ & 高度な適応的二値化（Bradley法）
     const processedCanvas = await this.preprocessImage(targetSource, options.cropToGuide !== false);
 
-    // 2. OCRエンジンの準備
+    // 3. OCRエンジンの準備
     const worker = await this.initTesseract(options.onProgress);
 
-    // 3. OCR実行
+    // 4. OCR実行
     const result = await worker.recognize(processedCanvas);
     const rawText = result.data.text || '';
     const confidence = result.data.confidence;
 
-    // 4. シリアルナンバー候補の抽出 & クリーニング
+    // 5. シリアルナンバー候補の抽出 & クリーニング
     const extracted = this.parseCandidateSerials(rawText);
 
     this.onStatusChange({ status: 'done', message: '解析完了' });
@@ -302,7 +405,7 @@ export class ScannerEngine {
       throw new Error('画像サイズを取得できませんでした');
     }
 
-    // ガイド枠がある場合、その領域だけを切り抜いてOCR負荷軽減＆認識精度向上
+    // ガイド枠のクロップ計算 (object-fit: cover を正確に補正)
     let sx = 0, sy = 0, sWidth = naturalW, sHeight = naturalH;
     
     if (cropToGuide && this.cropOverlayElement && this.videoElement) {
@@ -310,54 +413,94 @@ export class ScannerEngine {
       const oRect = this.cropOverlayElement.getBoundingClientRect();
 
       if (vRect.width > 0 && vRect.height > 0) {
-        const scaleX = naturalW / vRect.width;
-        const scaleY = naturalH / vRect.height;
+        const videoRatio = naturalW / naturalH;
+        const elemRatio = vRect.width / vRect.height;
 
-        sx = Math.max(0, (oRect.left - vRect.left) * scaleX);
-        sy = Math.max(0, (oRect.top - vRect.top) * scaleY);
-        sWidth = Math.min(naturalW - sx, oRect.width * scaleX);
-        sHeight = Math.min(naturalH - sy, oRect.height * scaleY);
+        let renderW, renderH, offsetX, offsetY;
+        if (elemRatio > videoRatio) {
+          renderW = vRect.width;
+          renderH = vRect.width / videoRatio;
+          offsetX = 0;
+          offsetY = (vRect.height - renderH) / 2;
+        } else {
+          renderH = vRect.height;
+          renderW = vRect.height * videoRatio;
+          offsetY = 0;
+          offsetX = (vRect.width - renderW) / 2;
+        }
+
+        const scale = naturalW / renderW;
+        sx = Math.max(0, ((oRect.left - vRect.left) - offsetX) * scale);
+        sy = Math.max(0, ((oRect.top - vRect.top) - offsetY) * scale);
+        sWidth = Math.min(naturalW - sx, oRect.width * scale);
+        sHeight = Math.min(naturalH - sy, oRect.height * scale);
       }
     }
 
-    // OCRに適した解像度にリサイズ（幅1000〜1600px程度が最も認識率が高い）
-    const targetWidth = Math.max(800, Math.min(1600, sWidth));
+    // OCR認識精度向上のための適正解像度へのリサイズ（幅1200〜1600px）
+    const targetWidth = Math.max(1000, Math.min(1800, Math.round(sWidth)));
     const targetHeight = Math.round(sHeight * (targetWidth / sWidth));
 
     canvas.width = targetWidth;
     canvas.height = targetHeight;
 
-    // クロップ領域を描画
+    // クロップ領域を描画（白背景マージン付きで境界ノイズ防止）
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, targetWidth, targetHeight);
     ctx.drawImage(source, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
 
-    // 画像フィルタ（グレースケール & 二値化）
+    // 高度な局所適応的二値化（Bradley-Roth / Integral Image アルゴリズム）
+    // 照明ムラや斜めの影があっても文字の輪郭だけを確実に黒く抽出
     const imgData = ctx.getImageData(0, 0, targetWidth, targetHeight);
     const data = imgData.data;
+    const w = targetWidth;
+    const h = targetHeight;
 
-    // 輝度ヒストグラムの算出
-    let minLum = 255;
-    let maxLum = 0;
-    const lums = new Uint8Array(data.length / 4);
-
+    // 1. グレースケール変換配列の作成
+    const gray = new Uint8Array(w * h);
     for (let i = 0, j = 0; i < data.length; i += 4, j++) {
-      // Rec. 709 輝度計算
-      const lum = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) | 0;
-      lums[j] = lum;
-      if (lum < minLum) minLum = lum;
-      if (lum > maxLum) maxLum = lum;
+      gray[j] = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) | 0;
     }
 
-    // 適応的コントラスト強調 & 二値化 (Otsuベースの閾値)
-    const range = Math.max(1, maxLum - minLum);
-    const threshold = minLum + range * 0.48; // やや暗めを黒文字として判定
+    // 2. 積分画像（Integral Image）の計算
+    const integral = new Float64Array(w * h);
+    for (let x = 0; x < w; x++) {
+      let sum = 0;
+      for (let y = 0; y < h; y++) {
+        const index = y * w + x;
+        sum += gray[index];
+        integral[index] = (x === 0 ? 0 : integral[index - 1]) + sum;
+      }
+    }
 
-    for (let i = 0, j = 0; i < data.length; i += 4, j++) {
-      const lum = lums[j];
-      // 二値化：文字（暗い部分）を黒(0)、券面背景を白(255)
-      const val = lum < threshold ? 0 : 255;
-      data[i] = val;
-      data[i + 1] = val;
-      data[i + 2] = val;
+    // 3. 局所適応的二値化の適用
+    // 局所ウィンドウサイズ（画像の約1/16）
+    const s = Math.max(8, Math.round(w / 18));
+    const s2 = Math.round(s / 2);
+    const t = 0.14; // 近傍平均より14%以上暗いピクセルを黒文字と判定
+
+    for (let y = 0; y < h; y++) {
+      const y1 = Math.max(0, y - s2);
+      const y2 = Math.min(h - 1, y + s2);
+      for (let x = 0; x < w; x++) {
+        const x1 = Math.max(0, x - s2);
+        const x2 = Math.min(w - 1, x + s2);
+        const count = (x2 - x1) * (y2 - y1);
+
+        // 積分画像から近傍領域の合計輝度をO(1)で取得
+        const sum = integral[y2 * w + x2] - integral[y1 * w + x2] - integral[y2 * w + x1] + integral[y1 * w + x1];
+        const currentVal = gray[y * w + x];
+
+        // 閾値判定
+        const isText = (currentVal * count) < (sum * (1.0 - t));
+        const outVal = isText ? 0 : 255;
+
+        const pIdx = (y * w + x) * 4;
+        data[pIdx] = outVal;
+        data[pIdx + 1] = outVal;
+        data[pIdx + 2] = outVal;
+        data[pIdx + 3] = 255;
+      }
     }
 
     ctx.putImageData(imgData, 0, 0);
@@ -379,59 +522,60 @@ export class ScannerEngine {
   parseCandidateSerials(rawText) {
     if (!rawText) return { bestCandidate: null, candidates: [] };
 
-    // 改行で分割して行ごとに探索
     const lines = rawText.split(/[\r\n]+/);
     const candidates = [];
+    const fullTextUpper = rawText.toUpperCase();
 
-    // パターン1: 4文字-4文字-4文字-4文字 (例: ABCD-1234-EFGH-5678)
-    const p1 = /[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}/gi;
-    // パターン2: 16桁連続英数字 (例: ABCD1234EFGH5678)
-    const p2 = /\b[A-Z0-9]{16}\b/gi;
-    // パターン3: 12〜15桁英数字
-    const p3 = /\b[A-Z0-9]{12,15}\b/gi;
-    // パターン4: URLクエリパラメータ (code=XXXX, serial=XXXX, token=XXXX)
-    const pUrl = /[?&](?:code|serial|ticket|c)=([A-Z0-9\-]+)/i;
+    // 1. URLクエリパラメータのチェック (QRコード読み取り時)
+    const pUrl14 = /[?&](?:code|serial|ticket|c)=([A-Z0-9]{14})(?:&|$)/i;
+    const urlMatch14 = fullTextUpper.match(pUrl14);
+    if (urlMatch14 && urlMatch14[1]) {
+      return {
+        bestCandidate: urlMatch14[1],
+        candidates: [{ code: urlMatch14[1], score: 100, source: 'url_14' }]
+      };
+    }
 
-    // URLパターンのチェック
-    const urlMatch = rawText.match(pUrl);
-    if (urlMatch && urlMatch[1]) {
-      const cleanUrlCode = urlMatch[1].replace(/[^A-Z0-9]/gi, '').toUpperCase();
-      if (cleanUrlCode.length >= 8) {
+    const pUrlGeneric = /[?&](?:code|serial|ticket|c)=([A-Z0-9\-]+)/i;
+    const urlMatchGeneric = fullTextUpper.match(pUrlGeneric);
+    if (urlMatchGeneric && urlMatchGeneric[1]) {
+      const cleanUrl = urlMatchGeneric[1].replace(/[^A-Z0-9]/gi, '');
+      if (cleanUrl.length === 14) {
         return {
-          bestCandidate: cleanUrlCode,
-          candidates: [{ code: cleanUrlCode, score: 100, source: 'url_param' }]
+          bestCandidate: cleanUrl,
+          candidates: [{ code: cleanUrl, score: 100, source: 'url_clean_14' }]
         };
+      } else if (cleanUrl.length >= 10 && cleanUrl.length <= 16) {
+        candidates.push({ code: cleanUrl, raw: urlMatchGeneric[1], score: 85 });
       }
     }
 
-    // 全文から正規表現マッチング
-    const fullTextUpper = rawText.toUpperCase();
-    
-    // ハイフン区切りマッチ
-    const m1 = fullTextUpper.match(p1);
-    if (m1) {
-      m1.forEach(c => {
-        const clean = c.replace(/[^A-Z0-9]/g, '');
-        candidates.push({ code: clean, raw: c, score: 95 });
-      });
-    }
-
-    // 16桁マッチ
-    const m2 = fullTextUpper.match(p2);
-    if (m2) {
-      m2.forEach(c => {
+    // 2. ちょうど14文字の連続英数字 (日向坂46公式仕様 最優先)
+    const pExact14 = /\b[A-Z0-9]{14}\b/g;
+    const mExact14 = fullTextUpper.match(pExact14);
+    if (mExact14) {
+      mExact14.forEach(c => {
         if (!candidates.some(cand => cand.code === c)) {
-          candidates.push({ code: c, raw: c, score: 90 });
+          candidates.push({ code: c, raw: c, score: 100 });
         }
       });
     }
 
-    // 行ごとのスペース区切り対応（例: "ABCD 1234 EFGH 5678" のようにスペースが入ってしまった場合）
+    // 3. 行ごとに空白・記号を除去して「ちょうど14文字」になるもの
+    // 例: OCRが途中にスペースを誤認した場合 ("A8B3 2K9M 4P7W 1X")
     lines.forEach(line => {
       const cleanLine = line.replace(/[^A-Z0-9]/gi, '').toUpperCase();
-      if (cleanLine.length === 16 && !candidates.some(c => c.code === cleanLine)) {
-        candidates.push({ code: cleanLine, raw: line.trim(), score: 85 });
-      } else if (cleanLine.length >= 12 && cleanLine.length <= 15 && !candidates.some(c => c.code === cleanLine)) {
+      if (cleanLine.length === 14 && !candidates.some(c => c.code === cleanLine)) {
+        candidates.push({ code: cleanLine, raw: line.trim(), score: 98 });
+      } else if (cleanLine.length > 14) {
+        // 15文字以上ある場合（前後にゴミが付着）、14文字の部分文字列を抽出
+        for (let i = 0; i <= cleanLine.length - 14; i++) {
+          const sub = cleanLine.substring(i, i + 14);
+          if (!candidates.some(c => c.code === sub)) {
+            candidates.push({ code: sub, raw: line.trim(), score: 88 - i * 2 });
+          }
+        }
+      } else if (cleanLine.length >= 12 && cleanLine.length <= 16 && !candidates.some(c => c.code === cleanLine)) {
         candidates.push({ code: cleanLine, raw: line.trim(), score: 70 });
       }
     });

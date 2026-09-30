@@ -162,13 +162,10 @@ export const Storage = {
   },
 
   /**
-   * 表示用フォーマット（例: 4文字ごとにハイフン挿入）
+   * 表示用フォーマット（日向坂46公式仕様: ハイフンなしの連続文字列）
    */
   formatSerialForDisplay(str) {
-    const clean = this.normalizeSerial(str);
-    if (!clean) return '';
-    // 4文字ごとのグループに分ける（16文字前後の一般的な券面仕様）
-    return clean.match(/.{1,4}/g)?.join('-') || clean;
+    return this.normalizeSerial(str);
   },
 
   /**
@@ -268,7 +265,8 @@ export const Storage = {
         continuousScan: false,
         autoCopyOnScan: false,
         defaultType: 'Type-A',
-        defaultTitle: '13th Single 卒業写真だけが知ってる'
+        defaultTitle: '13th Single 卒業写真だけが知ってる',
+        geminiApiKey: ''
       };
       return data ? { ...defaults, ...JSON.parse(data) } : defaults;
     } catch (e) {
