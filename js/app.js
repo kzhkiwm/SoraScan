@@ -500,15 +500,11 @@ class SoraScanApp {
           this.renderCampaignSelectors();
           this.renderList();
           this.showToast(`🎯 QRコードから検知: 対象作品を「${matched.shortTitle || matched.title}」に切り替えました`);
-        } else {
-          this.showToast(`ℹ️ 「${matched.shortTitle || matched.title}」の公式応募URLです`);
         }
+        // 既に選択中の作品と同じ公式応募URLの場合はトーストもサウンドも出さず静かにスルー
       } else {
-        // 未登録のURL
-        if (confirm(`QRコードから新しい応募サイトURLを検出しました:\n${result.url}\n\nこの作品を新規登録しますか？`)) {
-          this.openCampaignsModal();
-          this.inputCampaignUrl.value = result.url;
-        }
+        // 未登録のURLの場合はスキャンを邪魔しないようログのみ
+        console.log('QR detected URL:', result.url);
       }
       return;
     }
@@ -525,7 +521,7 @@ class SoraScanApp {
         Storage.add({
           serial: result.serial,
           rawText: result.raw,
-          type: 'Type-A',
+          type: '',
           campaignId: activeCamp.id,
           scanMethod: 'qr'
         });
@@ -621,10 +617,15 @@ class SoraScanApp {
       if (duplicate) {
         this.showToast(`⚠️ 重複: ${Storage.formatSerialForDisplay(serial)} は既に登録済みです`);
       } else {
+        const activeCamp = Storage.getActiveCampaign();
         Storage.add({
           serial: serial,
           rawText: res.rawText,
-          type: 'Type-A',
+          type: '',
+          campaignId: activeCamp.id,
+          campaignTitle: activeCamp.title,
+          singleTitle: activeCamp.title,
+          applyUrl: activeCamp.applyUrl,
           scanMethod: 'ocr'
         });
         this.showToast(`⚡ [OCR読取] ${Storage.formatSerialForDisplay(serial)} を自動登録しました`);
@@ -645,7 +646,9 @@ class SoraScanApp {
   openConfirmModal(data) {
     this.pendingRecord = data;
     this.modalSerialInput.value = Storage.formatSerialForDisplay(data.serial);
-    this.modalTypeSelect.value = data.type || 'Type-A';
+    if (this.modalTypeSelect) {
+      this.modalTypeSelect.value = data.type || '';
+    }
     this.modalNoteInput.value = data.note || '';
 
     // 作品セレクターの同期
@@ -701,7 +704,7 @@ class SoraScanApp {
     }
 
     const clean = Storage.normalizeSerial(rawVal);
-    const type = this.modalTypeSelect.value;
+    const type = this.modalTypeSelect ? this.modalTypeSelect.value : (this.pendingRecord?.type || '');
     const campaignId = this.modalCampaignSelect ? this.modalCampaignSelect.value : Storage.getActiveCampaignId();
     const campaigns = Storage.getCampaigns();
     const targetCamp = campaigns.find(c => c.id === campaignId) || Storage.getActiveCampaign();
@@ -769,7 +772,7 @@ class SoraScanApp {
     // 検索クエリ
     if (this.searchQuery) {
       allItems = allItems.filter(item => {
-        const fullStr = (item.serial + ' ' + item.type + ' ' + (item.campaignTitle || item.singleTitle || '') + ' ' + (item.note || '')).toLowerCase();
+        const fullStr = (item.serial + ' ' + (item.type || '') + ' ' + (item.campaignTitle || item.singleTitle || '') + ' ' + (item.note || '')).toLowerCase();
         return fullStr.includes(this.searchQuery);
       });
     }
@@ -797,7 +800,7 @@ class SoraScanApp {
           <div class="serial-code-text">${formattedSerial}</div>
           <div class="serial-meta">
             ${campTitle ? `<span style="background:rgba(124,199,232,0.15); color:var(--sky-blue); font-size:0.7rem; font-weight:700; padding:2px 6px; border-radius:4px;">${this.escapeHtml(campTitle)}</span>` : ''}
-            <span class="type-tag">${item.type}</span>
+            ${item.type ? `<span class="type-tag">${this.escapeHtml(item.type)}</span>` : ''}
             <span class="status-badge ${isUsed ? 'used' : 'unused'}">${isUsed ? '応募済' : '未応募'}</span>
             <span>${new Date(item.createdAt).toLocaleDateString('ja-JP')}</span>
             ${item.note ? `<span>💬 ${this.escapeHtml(item.note)}</span>` : ''}

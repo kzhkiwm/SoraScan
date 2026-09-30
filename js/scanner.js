@@ -185,7 +185,9 @@ export class ScannerEngine {
         const serial = this.extractSerialFromText(code.data);
         const isUrl = /^https?:\/\//i.test(code.data.trim());
         if (serial || isUrl) {
-          this.triggerSuccessEffect();
+          if (serial) {
+            this.triggerSuccessEffect();
+          }
           this.onQRDetected({
             raw: code.data,
             url: isUrl ? code.data.trim() : null,

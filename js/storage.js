@@ -281,7 +281,7 @@ export const Storage = {
       id: 'sn_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       serial: cleanSerial,
       rawText: item.rawText || '',
-      type: item.type || 'Type-A',
+      type: item.type || '',
       campaignId: targetCamp.id,
       campaignTitle: targetCamp.title,
       singleTitle: targetCamp.title, // 後方互換性
@@ -419,7 +419,7 @@ export const Storage = {
     const rows = list.map(item => [
       `"${this.formatSerialForDisplay(item.serial)}"`,
       `"${item.status === 'unused' ? '未応募' : '応募済'}"`,
-      `"${item.type}"`,
+      `"${item.type || ''}"`,
       `"${item.campaignTitle || item.singleTitle || ''}"`,
       `"${item.applyUrl || ''}"`,
       `"${item.scanMethod === 'qr' ? 'QRスキャン' : item.scanMethod === 'ocr' ? 'OCR文字読取' : '手動入力'}"`,
@@ -494,7 +494,7 @@ export const Storage = {
             id: item.id || ('sn_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7)),
             serial: norm,
             rawText: item.rawText || '',
-            type: item.type || 'Type-A',
+            type: item.type || '',
             campaignId: item.campaignId || activeCamp.id,
             campaignTitle: item.campaignTitle || item.singleTitle || activeCamp.title,
             singleTitle: item.singleTitle || activeCamp.title,
@@ -529,7 +529,7 @@ export const Storage = {
         vibrationEnabled: true,
         continuousScan: false,
         autoCopyOnScan: false,
-        defaultType: 'Type-A',
+        defaultType: '',
         defaultTitle: '日向坂46 18thシングル『イチャイチャ虫』',
         geminiApiKey: ''
       };
