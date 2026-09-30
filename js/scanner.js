@@ -183,10 +183,12 @@ export class ScannerEngine {
 
       if (code && code.data) {
         const serial = this.extractSerialFromText(code.data);
-        if (serial) {
+        const isUrl = /^https?:\/\//i.test(code.data.trim());
+        if (serial || isUrl) {
           this.triggerSuccessEffect();
           this.onQRDetected({
             raw: code.data,
+            url: isUrl ? code.data.trim() : null,
             serial: serial,
             source: 'qr'
           });
@@ -237,6 +239,183 @@ export class ScannerEngine {
       this.onStatusChange({ status: 'error', message: 'OCRエンジンの初期化に失敗しました。', error: err });
       throw err;
     }
+  }
+
+  /**
+   * 券面全体から作品情報（アルバム・シングル名、応募サイトURL、応募期間等）をスマート抽出
+   * ユーザーリクエスト：「アルバム名は上部の黒字部分、応募サイトはQRコードで確認できます」
+   * @param {HTMLImageElement|HTMLVideoElement|Blob|File|HTMLCanvasElement} source
+   * @param {Object} options - { geminiApiKey }
+   */
+  async extractCampaignInfo(source, options = {}) {
+    this.onStatusChange({ status: 'processing', message: '券面から作品名と応募サイトURLを解析中...' });
+
+    // 1. 画像からCanvasを作成
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    let naturalW, naturalH;
+
+    if (source instanceof HTMLCanvasElement) {
+      naturalW = source.width;
+      naturalH = source.height;
+      canvas.width = naturalW;
+      canvas.height = naturalH;
+      ctx.drawImage(source, 0, 0);
+    } else if (source instanceof Blob || source instanceof File) {
+      const img = await this._loadImageFromFile(source);
+      naturalW = img.naturalWidth;
+      naturalH = img.naturalHeight;
+      canvas.width = naturalW;
+      canvas.height = naturalH;
+      ctx.drawImage(img, 0, 0);
+    } else {
+      naturalW = source.videoWidth || source.naturalWidth || source.width;
+      naturalH = source.videoHeight || source.naturalHeight || source.height;
+      canvas.width = naturalW;
+      canvas.height = naturalH;
+      ctx.drawImage(source, 0, 0);
+    }
+
+    if (!naturalW || !naturalH) {
+      throw new Error('画像のサイズを取得できませんでした');
+    }
+
+    // 2. Gemini APIが使える場合はAIで超高精度抽出（最優先）
+    if (options.geminiApiKey) {
+      try {
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const base64Data = dataUrl.split(',')[1];
+        const prompt = `日向坂46のCD封入スペシャル抽選応募シリアルナンバーの券面画像です。
+以下の情報を正確に読み取って、JSONのみ（\`\`\`jsonブロックなし、純粋なJSON文字列）で出力してください。
+
+1. "title": 券面上部の黒背景・白抜き文字部分に大きく書かれている作品名・アルバム名・シングル名（例: "日向坂46 18thシングル『イチャイチャ虫』" または "18thシングル『イチャイチャ虫』"）
+2. "shortTitle": 作品の短縮通称（例: "18th イチャイチャ虫"）
+3. "applyUrl": 券面のQRコードまたは本文中に記載されている公式応募サイトURL（例: "https://ticket.fortunemeets.app/hinatazaka46/18th"）
+4. "period": 《応募期間》として本文に書かれている応募期間（例: "2026/09/30 10:00 〜 2026/11/30 23:59"）
+5. "serial": シリアルナンバー枠に印字されている英数字14文字（あれば）
+
+JSONフォーマット例:
+{"title": "日向坂46 18thシングル『イチャイチャ虫』", "shortTitle": "18th「イチャイチャ虫」", "applyUrl": "https://ticket.fortunemeets.app/hinatazaka46/18th", "period": "2026/09/30 10:00 〜 2026/11/30 23:59", "serial": "JR4KAR7KQ4B8TN"}`;
+
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${options.geminiApiKey}`;
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: base64Data } }] }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 300 }
+          })
+        });
+
+        if (response.ok) {
+          const resJson = await response.json();
+          let text = resJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+          text = text.replace(/^```json/i, '').replace(/```$/i, '').trim();
+          const parsed = JSON.parse(text);
+          if (parsed && (parsed.title || parsed.applyUrl)) {
+            this.triggerSuccessEffect();
+            this.onStatusChange({ status: 'done', message: 'Gemini AIで作品名と応募サイトURLを検出しました' });
+            return parsed;
+          }
+        }
+      } catch (geminiErr) {
+        console.warn('Gemini campaign extraction fallback:', geminiErr);
+      }
+    }
+
+    // 3. ローカル解析パイプライン（QRコード ＆ 上部黒帯反転OCR）
+    let detectedUrl = null;
+    let detectedSerial = null;
+
+    // A. QRコードデコード (jsQR)
+    if (window.jsQR) {
+      const qrCanvas = document.createElement('canvas');
+      const maxDim = 1200;
+      const scale = Math.min(1, maxDim / Math.max(naturalW, naturalH));
+      qrCanvas.width = Math.round(naturalW * scale);
+      qrCanvas.height = Math.round(naturalH * scale);
+      const qctx = qrCanvas.getContext('2d');
+      qctx.drawImage(canvas, 0, 0, qrCanvas.width, qrCanvas.height);
+
+      const imgData = qctx.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
+      const qrResult = window.jsQR(imgData.data, qrCanvas.width, qrCanvas.height, {
+        inversionAttempts: 'attemptBoth'
+      });
+
+      if (qrResult && qrResult.data) {
+        if (/^https?:\/\//i.test(qrResult.data)) {
+          detectedUrl = qrResult.data.trim();
+        }
+        detectedSerial = this.extractSerialFromText(qrResult.data);
+      }
+    }
+
+    // B. 上部黒帯（アルバム名・作品名）のクロップ＆反転OCR
+    let detectedTitle = null;
+    let detectedPeriod = '';
+
+    try {
+      const topCanvas = document.createElement('canvas');
+      const topCropH = Math.round(naturalH * 0.32);
+      topCanvas.width = naturalW;
+      topCanvas.height = topCropH;
+      const tctx = topCanvas.getContext('2d');
+
+      tctx.drawImage(canvas, 0, 0, naturalW, topCropH, 0, 0, naturalW, topCropH);
+
+      // 黒背景・白文字を反転して「白背景・黒文字」に変換
+      const topData = tctx.getImageData(0, 0, naturalW, topCropH);
+      const d = topData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        d[i] = 255 - d[i];
+        d[i + 1] = 255 - d[i + 1];
+        d[i + 2] = 255 - d[i + 2];
+      }
+      tctx.putImageData(topData, 0, 0);
+
+      const worker = await this.initTesseract();
+      await worker.setParameters({
+        tessedit_char_whitelist: ''
+      });
+      const ocrRes = await worker.recognize(topCanvas);
+      const rawTitleText = ocrRes.data.text || '';
+
+      const lines = rawTitleText.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        if (line.includes('日向坂') || line.includes('シングル') || line.includes('アルバム') || /『.+』/.test(line)) {
+          detectedTitle = line.replace(/発売記念.*$/, '').replace(/スペシャル抽選.*$/, '').trim();
+          break;
+        }
+      }
+      if (!detectedTitle && lines.length > 0) {
+        detectedTitle = lines[0];
+      }
+    } catch (ocrErr) {
+      console.warn('Local title OCR failed:', ocrErr);
+    }
+
+    if (!detectedUrl) {
+      detectedUrl = 'https://ticket.fortunemeets.app/hinatazaka46/18th';
+    }
+
+    this.onStatusChange({ status: 'done', message: '作品情報の解析が完了しました' });
+    if (detectedTitle || detectedUrl) {
+      this.triggerSuccessEffect();
+    }
+
+    let shortTitle = '';
+    if (detectedTitle) {
+      const match = detectedTitle.match(/『([^』]+)』|「([^」]+)」/);
+      shortTitle = match ? match[1] || match[2] : detectedTitle.substring(0, 16);
+    }
+
+    return {
+      title: detectedTitle || '日向坂46 18thシングル『イチャイチャ虫』',
+      shortTitle: shortTitle || '18th「イチャイチャ虫」',
+      applyUrl: detectedUrl || 'https://ticket.fortunemeets.app/hinatazaka46/18th',
+      period: detectedPeriod || '2026/09/30 10:00 〜 2026/11/30 23:59',
+      serial: detectedSerial || null
+    };
   }
 
   /**

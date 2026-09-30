@@ -40,7 +40,21 @@
         report += `<p style="color:#F87171;">❌ QR Code not detected in full image</p>`;
       }
 
-      // 2. OCRテスト
+      // 2. 作品情報・応募URL抽出テスト
+      try {
+        report += `<h4>3. Campaign (Album & URL) Auto-Extraction:</h4>`;
+        const campRes = await scanner.extractCampaignInfo(img);
+        report += `<div style="background:#1E293B; padding:12px; border-radius:8px; border:1px solid #38BDF8;">
+          <p><b>Title:</b> <span style="color:#38BDF8;">${campRes.title}</span></p>
+          <p><b>Short Title:</b> <span style="color:#7DD3FC;">${campRes.shortTitle}</span></p>
+          <p><b>Apply URL:</b> <a href="${campRes.applyUrl}" target="_blank" style="color:#FDE047;">${campRes.applyUrl}</a></p>
+          <p><b>Period:</b> ${campRes.period || '-'}</p>
+        </div>`;
+      } catch (e) {
+        report += `<p style="color:red;">Campaign Extraction Error: ${e.message}</p>`;
+      }
+
+      // 3. OCRテスト
       try {
         out.innerHTML = report + '<p>Running OCR...</p>';
         const res = await scanner.captureAndRecognize(img, { cropToGuide: false });

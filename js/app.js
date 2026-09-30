@@ -11,6 +11,7 @@ class SoraScanApp {
   constructor() {
     this.currentTab = 'viewScanner';
     this.activeFilter = 'all';
+    this.selectedCampaignFilter = 'all';
     this.searchQuery = '';
     this.isProcessing = false;
     this.lastScannedSerial = null;
@@ -41,6 +42,10 @@ class SoraScanApp {
     this.navItems = document.querySelectorAll('.bottom-nav .nav-item');
     this.navBadgeCount = document.getElementById('navBadgeCount');
 
+    // 作品（Campaign）セレクター要素
+    this.selectActiveCampaign = document.getElementById('selectActiveCampaign');
+    this.btnManageCampaigns = document.getElementById('btnManageCampaigns');
+
     // スキャナ要素
     this.videoElement = document.getElementById('cameraVideo');
     this.cropTargetBox = document.getElementById('cropTargetBox');
@@ -61,8 +66,11 @@ class SoraScanApp {
     this.emptyState = document.getElementById('emptyState');
     this.searchInput = document.getElementById('searchInput');
     this.filterPills = document.querySelectorAll('.filter-pills .pill-btn');
+    this.selectFilterCampaign = document.getElementById('selectFilterCampaign');
     this.btnCopyUnused = document.getElementById('btnCopyUnused');
     this.btnExportCSV = document.getElementById('btnExportCSV');
+    this.btnOpenLotterySite = document.getElementById('btnOpenLotterySite');
+    this.btnOpenLotterySiteLabel = document.getElementById('btnOpenLotterySiteLabel');
     this.btnEmptyGoScan = document.getElementById('btnEmptyGoScan');
 
     // シミュレータ要素
@@ -76,10 +84,27 @@ class SoraScanApp {
     this.modalSerialInput = document.getElementById('modalSerialInput');
     this.modalDuplicateAlert = document.getElementById('modalDuplicateAlert');
     this.modalTypeSelect = document.getElementById('modalTypeSelect');
-    this.modalSingleTitleInput = document.getElementById('modalSingleTitleInput');
+    this.modalCampaignSelect = document.getElementById('modalCampaignSelect');
+    this.btnModalAddCampaign = document.getElementById('btnModalAddCampaign');
     this.modalNoteInput = document.getElementById('modalNoteInput');
     this.btnModalSave = document.getElementById('btnModalSave');
     this.btnModalSaveAndNext = document.getElementById('btnModalSaveAndNext');
+
+    // 作品管理モーダル要素
+    this.modalCampaigns = document.getElementById('modalCampaigns');
+    this.btnCloseCampaignsModal = document.getElementById('btnCloseCampaignsModal');
+    this.btnAutoScanCampaignCamera = document.getElementById('btnAutoScanCampaignCamera');
+    this.fileCampaignPhoto = document.getElementById('fileCampaignPhoto');
+    this.formCampaignEdit = document.getElementById('formCampaignEdit');
+    this.inputCampaignEditId = document.getElementById('inputCampaignEditId');
+    this.inputCampaignTitle = document.getElementById('inputCampaignTitle');
+    this.inputCampaignShortTitle = document.getElementById('inputCampaignShortTitle');
+    this.inputCampaignUrl = document.getElementById('inputCampaignUrl');
+    this.inputCampaignPeriod = document.getElementById('inputCampaignPeriod');
+    this.checkCampaignSetActive = document.getElementById('checkCampaignSetActive');
+    this.btnCancelEditCampaign = document.getElementById('btnCancelEditCampaign');
+    this.btnSaveCampaign = document.getElementById('btnSaveCampaign');
+    this.campaignsManageList = document.getElementById('campaignsManageList');
 
     // 設定モーダル
     this.modalSettings = document.getElementById('modalSettings');
@@ -131,6 +156,9 @@ class SoraScanApp {
       this.inputGeminiApiKey.value = settings.geminiApiKey || '';
     }
 
+    // 作品セレクターの初期化
+    this.renderCampaignSelectors();
+
     // 一覧表示と統計の更新
     this.renderList();
 
@@ -145,6 +173,66 @@ class SoraScanApp {
    * イベントリスナーの登録
    */
   initEventListeners() {
+    // 作品（Campaign）アクティブ切り替え
+    if (this.selectActiveCampaign) {
+      this.selectActiveCampaign.addEventListener('change', (e) => {
+        Storage.setActiveCampaignId(e.target.value);
+        this.renderCampaignSelectors();
+        this.renderList();
+        const camp = Storage.getActiveCampaign();
+        this.showToast(`🎯 対象作品: ${camp.shortTitle || camp.title}`);
+      });
+    }
+
+    // 作品管理モーダル開閉
+    if (this.btnManageCampaigns) {
+      this.btnManageCampaigns.addEventListener('click', () => this.openCampaignsModal());
+    }
+    if (this.btnCloseCampaignsModal) {
+      this.btnCloseCampaignsModal.addEventListener('click', () => this.closeCampaignsModal());
+    }
+
+    // シリアル確認モーダルからの作品追加
+    if (this.btnModalAddCampaign) {
+      this.btnModalAddCampaign.addEventListener('click', () => this.openCampaignsModal());
+    }
+
+    // 作品管理：カメラからスマート自動読取
+    if (this.btnAutoScanCampaignCamera) {
+      this.btnAutoScanCampaignCamera.addEventListener('click', () => this.executeAutoScanCampaignFromCamera());
+    }
+
+    // 作品管理：写真からスマート自動読取
+    if (this.fileCampaignPhoto) {
+      this.fileCampaignPhoto.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.executeAutoScanCampaignFromFile(e.target.files[0]);
+          e.target.value = '';
+        }
+      });
+    }
+
+    // 作品登録・編集フォーム
+    if (this.formCampaignEdit) {
+      this.formCampaignEdit.addEventListener('submit', (e) => {
+        e.preventDefault();
+        this.saveCampaignRecord();
+      });
+    }
+
+    // 作品編集キャンセル
+    if (this.btnCancelEditCampaign) {
+      this.btnCancelEditCampaign.addEventListener('click', () => this.resetCampaignForm());
+    }
+
+    // 一覧画面：作品絞り込みセレクター
+    if (this.selectFilterCampaign) {
+      this.selectFilterCampaign.addEventListener('change', (e) => {
+        this.selectedCampaignFilter = e.target.value;
+        this.renderList();
+      });
+    }
+
     // ボトムナビゲーション切り替え
     this.navItems.forEach(item => {
       item.addEventListener('click', () => {
@@ -241,20 +329,22 @@ class SoraScanApp {
 
     // 未応募一括コピー
     this.btnCopyUnused.addEventListener('click', () => {
-      const text = Storage.exportAsText('unused');
+      const text = Storage.exportAsText('unused', this.selectedCampaignFilter);
       if (!text) {
         this.showToast('コピー可能な未応募シリアルがありません');
         return;
       }
       navigator.clipboard.writeText(text).then(() => {
         const count = text.split('\n').length;
-        this.showToast(`📋 未応募シリアル ${count} 件を一括コピーしました！`);
+        const activeCamp = Storage.getActiveCampaign();
+        const campLabel = this.selectedCampaignFilter === 'all' ? '全体' : (activeCamp.shortTitle || activeCamp.title);
+        this.showToast(`📋 [${campLabel}] 未応募シリアル ${count} 件を一括コピーしました！`);
       });
     });
 
     // CSVエクスポート
     this.btnExportCSV.addEventListener('click', () => {
-      const csv = Storage.exportAsCSV();
+      const csv = Storage.exportAsCSV(this.selectedCampaignFilter);
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -311,6 +401,7 @@ class SoraScanApp {
           const res = Storage.importJSON(event.target.result);
           if (res.success) {
             this.showToast(`復元完了: ${res.imported} 件追加（重複スキップ: ${res.skipped} 件）`);
+            this.renderCampaignSelectors();
             this.renderList();
             this.closeSettingsModal();
           } else {
@@ -391,12 +482,36 @@ class SoraScanApp {
    */
   handleQRResult(result) {
     const now = Date.now();
+    const identifier = result.serial || result.url || result.raw;
     // 直前のスキャンと同一で1.5秒以内の連打は無視
-    if (this.lastScannedSerial === result.serial && (now - this.lastScanTimestamp) < 1500) {
+    if (this.lastScannedSerial === identifier && (now - this.lastScanTimestamp) < 1500) {
       return;
     }
-    this.lastScannedSerial = result.serial;
+    this.lastScannedSerial = identifier;
     this.lastScanTimestamp = now;
+
+    // もしシリアル番号がなく、純粋な応募サイトURLだった場合
+    if (!result.serial && result.url) {
+      const campaigns = Storage.getCampaigns();
+      const matched = campaigns.find(c => c.applyUrl && (c.applyUrl === result.url || result.url.startsWith(c.applyUrl)));
+      if (matched) {
+        if (Storage.getActiveCampaignId() !== matched.id) {
+          Storage.setActiveCampaignId(matched.id);
+          this.renderCampaignSelectors();
+          this.renderList();
+          this.showToast(`🎯 QRコードから検知: 対象作品を「${matched.shortTitle || matched.title}」に切り替えました`);
+        } else {
+          this.showToast(`ℹ️ 「${matched.shortTitle || matched.title}」の公式応募URLです`);
+        }
+      } else {
+        // 未登録のURL
+        if (confirm(`QRコードから新しい応募サイトURLを検出しました:\n${result.url}\n\nこの作品を新規登録しますか？`)) {
+          this.openCampaignsModal();
+          this.inputCampaignUrl.value = result.url;
+        }
+      }
+      return;
+    }
 
     // 重複チェック
     const duplicate = Storage.checkDuplicate(result.serial);
@@ -406,10 +521,12 @@ class SoraScanApp {
       if (duplicate) {
         this.showToast(`⚠️ 重複: ${Storage.formatSerialForDisplay(result.serial)} は登録済みです`);
       } else {
+        const activeCamp = Storage.getActiveCampaign();
         Storage.add({
           serial: result.serial,
           rawText: result.raw,
           type: 'Type-A',
+          campaignId: activeCamp.id,
           scanMethod: 'qr'
         });
         this.showToast(`⚡ [QR読取] ${Storage.formatSerialForDisplay(result.serial)} を自動登録しました`);
@@ -531,6 +648,12 @@ class SoraScanApp {
     this.modalTypeSelect.value = data.type || 'Type-A';
     this.modalNoteInput.value = data.note || '';
 
+    // 作品セレクターの同期
+    if (this.modalCampaignSelect) {
+      const activeId = data.campaignId || Storage.getActiveCampaignId();
+      this.modalCampaignSelect.value = activeId;
+    }
+
     this.validateModalDuplicate();
     this.modalConfirm.classList.add('open');
   }
@@ -579,7 +702,9 @@ class SoraScanApp {
 
     const clean = Storage.normalizeSerial(rawVal);
     const type = this.modalTypeSelect.value;
-    const singleTitle = this.modalSingleTitleInput.value;
+    const campaignId = this.modalCampaignSelect ? this.modalCampaignSelect.value : Storage.getActiveCampaignId();
+    const campaigns = Storage.getCampaigns();
+    const targetCamp = campaigns.find(c => c.id === campaignId) || Storage.getActiveCampaign();
     const note = this.modalNoteInput.value;
 
     if (this.pendingRecord && this.pendingRecord.id) {
@@ -587,7 +712,10 @@ class SoraScanApp {
       Storage.update(this.pendingRecord.id, {
         serial: clean,
         type,
-        singleTitle,
+        campaignId: targetCamp.id,
+        campaignTitle: targetCamp.title,
+        singleTitle: targetCamp.title,
+        applyUrl: targetCamp.applyUrl,
         note
       });
       this.showToast(`シリアル情報を更新しました`);
@@ -597,7 +725,10 @@ class SoraScanApp {
         serial: clean,
         rawText: this.pendingRecord?.rawText || '',
         type,
-        singleTitle,
+        campaignId: targetCamp.id,
+        campaignTitle: targetCamp.title,
+        singleTitle: targetCamp.title,
+        applyUrl: targetCamp.applyUrl,
         note,
         scanMethod: this.pendingRecord?.scanMethod || 'manual'
       });
@@ -616,7 +747,7 @@ class SoraScanApp {
    * 一覧表示のレンダリング
    */
   renderList() {
-    const stats = Storage.getStats();
+    const stats = Storage.getStats(this.selectedCampaignFilter);
     this.statTotal.textContent = stats.total;
     this.statUnused.textContent = stats.unused;
     this.statUsed.textContent = stats.used;
@@ -628,17 +759,17 @@ class SoraScanApp {
       this.navBadgeCount.style.display = 'none';
     }
 
-    let allItems = Storage.getAll();
+    let allItems = Storage.getAll(this.selectedCampaignFilter);
 
-    // フィルター
+    // ステータスフィルター
     if (this.activeFilter !== 'all') {
       allItems = allItems.filter(item => item.status === this.activeFilter);
     }
 
-    // 検索
+    // 検索クエリ
     if (this.searchQuery) {
       allItems = allItems.filter(item => {
-        const fullStr = (item.serial + ' ' + item.type + ' ' + (item.note || '')).toLowerCase();
+        const fullStr = (item.serial + ' ' + item.type + ' ' + (item.campaignTitle || item.singleTitle || '') + ' ' + (item.note || '')).toLowerCase();
         return fullStr.includes(this.searchQuery);
       });
     }
@@ -658,11 +789,13 @@ class SoraScanApp {
       
       const formattedSerial = Storage.formatSerialForDisplay(item.serial);
       const isUsed = item.status === 'used';
+      const campTitle = item.campaignTitle || item.singleTitle || '';
 
       card.innerHTML = `
         <div class="serial-info">
           <div class="serial-code-text">${formattedSerial}</div>
           <div class="serial-meta">
+            ${campTitle ? `<span style="background:rgba(124,199,232,0.15); color:var(--sky-blue); font-size:0.7rem; font-weight:700; padding:2px 6px; border-radius:4px;">${this.escapeHtml(campTitle)}</span>` : ''}
             <span class="type-tag">${item.type}</span>
             <span class="status-badge ${isUsed ? 'used' : 'unused'}">${isUsed ? '応募済' : '未応募'}</span>
             <span>${new Date(item.createdAt).toLocaleDateString('ja-JP')}</span>
@@ -670,6 +803,16 @@ class SoraScanApp {
           </div>
         </div>
         <div class="serial-card-actions">
+          ${item.applyUrl ? `
+            <button class="btn-card-visit" title="シリアルをコピーして応募サイトを開く" data-serial="${item.serial}" data-url="${item.applyUrl}">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
+              応募
+            </button>
+          ` : ''}
           <button class="btn-card-copy" title="クリップボードにコピー" data-serial="${item.serial}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -690,6 +833,18 @@ class SoraScanApp {
           </button>
         </div>
       `;
+
+      // 応募サイト直行ボタン
+      const btnVisit = card.querySelector('.btn-card-visit');
+      if (btnVisit) {
+        btnVisit.addEventListener('click', (e) => {
+          e.stopPropagation();
+          navigator.clipboard.writeText(item.serial).then(() => {
+            this.showToast(`📋 ${formattedSerial} をコピーし、公式応募サイトを開きます`);
+            window.open(item.applyUrl, '_blank', 'noopener,noreferrer');
+          });
+        });
+      }
 
       // コピーボタン
       card.querySelector('.btn-card-copy').addEventListener('click', () => {
@@ -717,6 +872,254 @@ class SoraScanApp {
 
       this.serialListContainer.appendChild(card);
     });
+  }
+
+  /**
+   * 作品セレクター（ヘッダー・一覧・モーダル）の同期描画
+   */
+  renderCampaignSelectors() {
+    const campaigns = Storage.getCampaigns();
+    const activeId = Storage.getActiveCampaignId();
+    const activeCamp = Storage.getActiveCampaign();
+
+    // 1. ヘッダー直下アクティブセレクター
+    if (this.selectActiveCampaign) {
+      this.selectActiveCampaign.innerHTML = '';
+      campaigns.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.title;
+        opt.selected = (c.id === activeId);
+        this.selectActiveCampaign.appendChild(opt);
+      });
+    }
+
+    // 2. 一覧画面：作品絞り込みセレクター
+    if (this.selectFilterCampaign) {
+      const currentVal = this.selectFilterCampaign.value || 'all';
+      this.selectFilterCampaign.innerHTML = '<option value="all">すべての作品</option>';
+      campaigns.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.shortTitle || c.title;
+        opt.selected = (c.id === currentVal);
+        this.selectFilterCampaign.appendChild(opt);
+      });
+    }
+
+    // 3. シリアル確認モーダル内セレクター
+    if (this.modalCampaignSelect) {
+      this.modalCampaignSelect.innerHTML = '';
+      campaigns.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.title;
+        opt.selected = (c.id === activeId);
+        this.modalCampaignSelect.appendChild(opt);
+      });
+    }
+
+    // 4. 一覧画面の「公式応募サイトを開く」ボタンのURLと表示更新
+    if (this.btnOpenLotterySite) {
+      let targetCamp = activeCamp;
+      if (this.selectedCampaignFilter && this.selectedCampaignFilter !== 'all') {
+        targetCamp = campaigns.find(c => c.id === this.selectedCampaignFilter) || activeCamp;
+      }
+      this.btnOpenLotterySite.href = targetCamp.applyUrl || 'https://ticket.fortunemeets.app/';
+      if (this.btnOpenLotterySiteLabel) {
+        this.btnOpenLotterySiteLabel.textContent = `${targetCamp.shortTitle || '公式'} 応募サイトを開く ↗`;
+      }
+    }
+  }
+
+  /**
+   * 作品管理モーダルを開く
+   */
+  openCampaignsModal(editId = null) {
+    this.renderCampaignsManageList();
+    if (editId) {
+      const campaigns = Storage.getCampaigns();
+      const target = campaigns.find(c => c.id === editId);
+      if (target) {
+        this.inputCampaignEditId.value = target.id;
+        this.inputCampaignTitle.value = target.title;
+        this.inputCampaignShortTitle.value = target.shortTitle || '';
+        this.inputCampaignUrl.value = target.applyUrl || '';
+        this.inputCampaignPeriod.value = target.period || '';
+        this.checkCampaignSetActive.checked = (target.id === Storage.getActiveCampaignId());
+        this.btnCancelEditCampaign.style.display = 'inline-block';
+        this.btnSaveCampaign.textContent = '作品情報を更新';
+      }
+    } else {
+      this.resetCampaignForm();
+    }
+    this.modalCampaigns.classList.add('open');
+  }
+
+  closeCampaignsModal() {
+    this.modalCampaigns.classList.remove('open');
+    this.resetCampaignForm();
+  }
+
+  /**
+   * 作品管理モーダル内の登録済み作品リストを描画
+   */
+  renderCampaignsManageList() {
+    if (!this.campaignsManageList) return;
+    const campaigns = Storage.getCampaigns();
+    const activeId = Storage.getActiveCampaignId();
+    this.campaignsManageList.innerHTML = '';
+
+    campaigns.forEach(c => {
+      const isActive = (c.id === activeId);
+      const card = document.createElement('div');
+      card.className = `campaign-item-card ${isActive ? 'is-active' : ''}`;
+
+      const stats = Storage.getStats(c.id);
+
+      card.innerHTML = `
+        <div class="campaign-item-info">
+          <div class="campaign-item-title">${this.escapeHtml(c.title)}</div>
+          <a href="${this.escapeHtml(c.applyUrl || '#')}" target="_blank" rel="noopener noreferrer" class="campaign-item-url" title="${this.escapeHtml(c.applyUrl || '')}">
+            🔗 ${this.escapeHtml(c.applyUrl || 'URL未設定')}
+          </a>
+          <div class="campaign-item-meta">
+            ${isActive ? '<span class="badge-active-campaign">選択中</span>' : ''}
+            <span>登録: <b>${stats.total}</b>枚 (未応募: <b>${stats.unused}</b>枚)</span>
+            ${c.period ? `<span>⏳ ${this.escapeHtml(c.period)}</span>` : ''}
+          </div>
+        </div>
+        <div class="campaign-item-actions">
+          ${!isActive ? `<button type="button" class="btn-campaign-action btn-set-active" data-id="${c.id}">選択</button>` : ''}
+          <button type="button" class="btn-campaign-action btn-edit" data-id="${c.id}">編集</button>
+          ${campaigns.length > 1 ? `<button type="button" class="btn-campaign-action btn-danger btn-delete" data-id="${c.id}">削除</button>` : ''}
+        </div>
+      `;
+
+      // 選択ボタン
+      const btnSetActive = card.querySelector('.btn-set-active');
+      if (btnSetActive) {
+        btnSetActive.addEventListener('click', () => {
+          Storage.setActiveCampaignId(c.id);
+          this.renderCampaignSelectors();
+          this.renderCampaignsManageList();
+          this.renderList();
+          this.showToast(`🎯 対象作品を「${c.shortTitle || c.title}」に変更しました`);
+        });
+      }
+
+      // 編集ボタン
+      card.querySelector('.btn-edit').addEventListener('click', () => {
+        this.openCampaignsModal(c.id);
+      });
+
+      // 削除ボタン
+      const btnDel = card.querySelector('.btn-delete');
+      if (btnDel) {
+        btnDel.addEventListener('click', () => {
+          if (confirm(`作品「${c.title}」を削除しますか？\n（登録されたシリアルナンバーは保持されます）`)) {
+            try {
+              Storage.deleteCampaign(c.id);
+              this.renderCampaignSelectors();
+              this.renderCampaignsManageList();
+              this.renderList();
+              this.showToast('作品を削除しました');
+            } catch (err) {
+              alert(err.message);
+            }
+          }
+        });
+      }
+
+      this.campaignsManageList.appendChild(card);
+    });
+  }
+
+  /**
+   * 作品の保存（新規または更新）
+   */
+  saveCampaignRecord() {
+    const editId = this.inputCampaignEditId.value;
+    const title = this.inputCampaignTitle.value.trim();
+    const shortTitle = this.inputCampaignShortTitle.value.trim();
+    const applyUrl = this.inputCampaignUrl.value.trim();
+    const period = this.inputCampaignPeriod.value.trim();
+    const setActive = this.checkCampaignSetActive.checked;
+
+    if (!title || !applyUrl) {
+      this.showToast('作品名と応募サイトURLは必須です');
+      return;
+    }
+
+    if (editId) {
+      Storage.updateCampaign(editId, { title, shortTitle, applyUrl, period });
+      if (setActive) Storage.setActiveCampaignId(editId);
+      this.showToast(`作品「${shortTitle || title}」を更新しました`);
+    } else {
+      const created = Storage.addCampaign({ title, shortTitle, applyUrl, period });
+      if (setActive) Storage.setActiveCampaignId(created.id);
+      this.showToast(`🎉 作品「${shortTitle || title}」を登録しました！`);
+    }
+
+    this.renderCampaignSelectors();
+    this.renderCampaignsManageList();
+    this.renderList();
+    this.resetCampaignForm();
+  }
+
+  resetCampaignForm() {
+    this.inputCampaignEditId.value = '';
+    this.inputCampaignTitle.value = '';
+    this.inputCampaignShortTitle.value = '';
+    this.inputCampaignUrl.value = '';
+    this.inputCampaignPeriod.value = '';
+    this.checkCampaignSetActive.checked = true;
+    this.btnCancelEditCampaign.style.display = 'none';
+    this.btnSaveCampaign.textContent = '作品を保存・登録';
+  }
+
+  /**
+   * カメラ映像から作品情報をスマート自動読取
+   */
+  async executeAutoScanCampaignFromCamera() {
+    if (!this.videoElement) return;
+    this.showToast('券面から作品名と応募サイトURLを解析中...');
+
+    try {
+      const apiKey = Storage.getSettings().geminiApiKey;
+      const res = await this.scanner.extractCampaignInfo(this.videoElement, { geminiApiKey: apiKey });
+      
+      this.applyDetectedCampaignInfo(res);
+      this.showToast('✨ 券面から作品名と応募サイトURLを自動入力しました！');
+    } catch (e) {
+      console.error('Auto scan error:', e);
+      this.showToast('券面の解析に失敗しました。写真から選択するか、手動で入力してください。');
+    }
+  }
+
+  /**
+   * 写真ファイルから作品情報をスマート自動読取
+   */
+  async executeAutoScanCampaignFromFile(file) {
+    this.showToast('アップロード画像を解析中...');
+
+    try {
+      const apiKey = Storage.getSettings().geminiApiKey;
+      const res = await this.scanner.extractCampaignInfo(file, { geminiApiKey: apiKey });
+
+      this.applyDetectedCampaignInfo(res);
+      this.showToast('✨ 券面から作品名と応募サイトURLを自動入力しました！');
+    } catch (e) {
+      console.error('Auto scan file error:', e);
+      this.showToast('画像の解析に失敗しました。手動で入力してください。');
+    }
+  }
+
+  applyDetectedCampaignInfo(info) {
+    if (info.title) this.inputCampaignTitle.value = info.title;
+    if (info.shortTitle) this.inputCampaignShortTitle.value = info.shortTitle;
+    if (info.applyUrl) this.inputCampaignUrl.value = info.applyUrl;
+    if (info.period) this.inputCampaignPeriod.value = info.period;
   }
 
   /**

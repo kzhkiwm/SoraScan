@@ -52,6 +52,31 @@
     </div>
   </header>
 
+  <!-- Active Campaign Switcher Bar -->
+  <section class="campaign-bar">
+    <div class="campaign-selector-wrapper">
+      <span class="campaign-label">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polygon points="12 8 8 12 12 16 12 8"></polygon>
+        </svg>
+        対象作品
+      </span>
+      <select id="selectActiveCampaign" class="campaign-select" aria-label="対象シングル・アルバムを選択">
+        <!-- JSで動的生成 -->
+      </select>
+    </div>
+    <div class="campaign-bar-actions">
+      <button id="btnManageCampaigns" class="campaign-btn-manage" title="作品と応募サイトの登録・管理">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        作品登録
+      </button>
+    </div>
+  </section>
+
   <!-- Main View Container -->
   <main class="app-container">
 
@@ -227,19 +252,26 @@
           CSV保存
         </button>
 
-        <!-- Official Lottery Site Link -->
-        <a href="https://ticket.fortunemusic.app/" target="_blank" rel="noopener noreferrer" class="batch-btn fortune-btn">
+        <!-- Official Lottery Site Link (Dynamic according to active campaign) -->
+        <a id="btnOpenLotterySite" href="https://ticket.fortunemeets.app/hinatazaka46/18th" target="_blank" rel="noopener noreferrer" class="batch-btn fortune-btn">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
             <polyline points="15 3 21 3 21 9"></polyline>
             <line x1="10" y1="14" x2="21" y2="3"></line>
           </svg>
-          公式応募サイトを開く
+          <span id="btnOpenLotterySiteLabel">公式応募サイトを開く</span>
         </a>
       </div>
 
       <!-- Search & Filters -->
       <div class="list-toolbar">
+        <div class="campaign-filter-wrapper">
+          <select id="selectFilterCampaign" class="form-select filter-select" aria-label="作品で絞り込み">
+            <option value="all">すべての作品</option>
+            <!-- JSで動的生成 -->
+          </select>
+        </div>
+
         <div class="search-input-wrapper">
           <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"></circle>
@@ -381,10 +413,17 @@
           </select>
         </div>
 
-        <!-- Single Title -->
+        <!-- Campaign Select -->
         <div class="form-group">
-          <label class="form-label" for="modalSingleTitleInput">対象シングル・作品名</label>
-          <input type="text" id="modalSingleTitleInput" class="form-input" value="13th Single 卒業写真だけが知ってる">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <label class="form-label" for="modalCampaignSelect">対象作品（シングル・アルバム）</label>
+            <button type="button" id="btnModalAddCampaign" style="background:none; border:none; color:var(--sky-blue); font-size:0.75rem; font-weight:700; cursor:pointer;">
+              ＋作品を追加
+            </button>
+          </div>
+          <select id="modalCampaignSelect" class="form-select">
+            <!-- JSで動的生成 -->
+          </select>
         </div>
 
         <!-- Note -->
@@ -486,6 +525,133 @@
           <button id="btnClearAllSerials" class="btn-secondary" style="color: #EF4444; border-color: rgba(239, 68, 68, 0.4);">
             登録データをすべて削除
           </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- Modal: Campaign (Album & URL) Management -->
+  <!-- ========================================== -->
+  <div class="modal-backdrop" id="modalCampaigns">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sky-blue)" stroke-width="2.5">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polygon points="12 8 8 12 12 16 12 8"></polygon>
+          </svg>
+          作品（シングル・アルバム）と応募サイトの登録
+        </div>
+        <button class="icon-btn" id="btnCloseCampaignsModal" aria-label="閉じる">✕</button>
+      </div>
+
+      <div class="modal-body">
+        
+        <!-- Smart Auto-Scan from Ticket Banner -->
+        <div class="smart-scan-box">
+          <div class="smart-scan-header">
+            <div class="smart-scan-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+              📸 券面から自動読取（推奨）
+            </div>
+            <div class="smart-scan-desc">
+              券面の全体が写る写真を撮影または選択すると、<strong>上部黒字部分から作品名</strong>、<strong>QRコードから応募サイトURL</strong>を自動検出して瞬時に入力します！
+            </div>
+          </div>
+          <div class="smart-scan-actions">
+            <button id="btnAutoScanCampaignCamera" class="btn-primary" style="flex:1; font-size:0.85rem; padding:9px 12px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19 4h-3.17L14.4 2H9.6L8.17 4H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z"/>
+              </svg>
+              カメラ映像から自動読取
+            </button>
+            <label for="fileCampaignPhoto" class="btn-secondary" style="flex:1; font-size:0.85rem; padding:9px 12px; text-align:center; cursor:pointer;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              写真から自動読取
+              <input type="file" id="fileCampaignPhoto" accept="image/*" style="display:none;">
+            </label>
+          </div>
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid var(--glass-border); margin: 12px 0;">
+
+        <!-- Manual Edit / Add Form -->
+        <form id="formCampaignEdit" onsubmit="return false;">
+          <input type="hidden" id="inputCampaignEditId" value="">
+          
+          <div class="form-group">
+            <label class="form-label" for="inputCampaignTitle">
+              作品名・アルバム名（正式名称）
+              <span style="color:#EF4444;">*</span>
+            </label>
+            <input type="text" id="inputCampaignTitle" class="form-input" placeholder="例: 日向坂46 18thシングル『イチャイチャ虫』" required>
+            <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
+              ※券面上部の黒字部分に記載されているタイトルです。
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="inputCampaignShortTitle">
+              短縮表示名（ボタン・バッジ用）
+            </label>
+            <input type="text" id="inputCampaignShortTitle" class="form-input" placeholder="例: 18th「イチャイチャ虫」">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="inputCampaignUrl">
+              公式応募サイトURL
+              <span style="color:#EF4444;">*</span>
+            </label>
+            <input type="url" id="inputCampaignUrl" class="form-input" placeholder="例: https://ticket.fortunemeets.app/hinatazaka46/18th" required>
+            <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
+              ※券面のQRコード、または本文に記載されている応募特設サイトのURLです。
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="inputCampaignPeriod">
+              応募期間（任意）
+            </label>
+            <input type="text" id="inputCampaignPeriod" class="form-input" placeholder="例: 2026/09/30 10:00 〜 2026/11/30 23:59">
+          </div>
+
+          <div class="mode-toggle-group" style="padding: 10px 0; margin-bottom: 8px;">
+            <div class="toggle-label">
+              <div class="toggle-title">現在スキャンする対象作品にする</div>
+              <div class="toggle-desc">新規スキャン時の保存先として選択します</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="checkCampaignSetActive" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div style="display:flex; gap:8px;">
+            <button type="button" id="btnCancelEditCampaign" class="btn-secondary" style="flex:1; display:none;">
+              編集キャンセル
+            </button>
+            <button type="submit" id="btnSaveCampaign" class="btn-primary" style="flex:2;">
+              作品を保存・登録
+            </button>
+          </div>
+        </form>
+
+        <hr style="border: 0; border-top: 1px solid var(--glass-border); margin: 16px 0 12px;">
+
+        <!-- Registered Campaigns List -->
+        <div class="form-label" style="margin-bottom:8px;">登録済み作品一覧</div>
+        <div class="campaigns-manage-list" id="campaignsManageList">
+          <!-- JSで動的描画 -->
         </div>
 
       </div>

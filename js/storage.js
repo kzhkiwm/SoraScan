@@ -5,20 +5,210 @@
 
 const STORAGE_KEY = 'sorascan_serials_v1';
 const SETTINGS_KEY = 'sorascan_settings_v1';
+const CAMPAIGNS_KEY = 'sorascan_campaigns_v1';
+const ACTIVE_CAMPAIGN_KEY = 'sorascan_active_campaign_id';
+
+export const DEFAULT_CAMPAIGNS = [
+  {
+    id: 'camp_18th_single',
+    title: '日向坂46 18thシングル『イチャイチャ虫』',
+    shortTitle: '18th「イチャイチャ虫」',
+    applyUrl: 'https://ticket.fortunemeets.app/hinatazaka46/18th',
+    period: '2026/09/30 10:00 〜 2026/11/30 23:59',
+    createdAt: '2026-09-30T10:00:00.000Z'
+  },
+  {
+    id: 'camp_13th_single',
+    title: '日向坂46 13thシングル『卒業写真だけが知ってる』',
+    shortTitle: '13th「卒業写真だけが知ってる」',
+    applyUrl: 'https://ticket.fortunemusic.app/',
+    period: '',
+    createdAt: '2025-01-01T00:00:00.000Z'
+  }
+];
 
 export const Storage = {
   /**
    * 保存されているすべてのシリアルレコードを取得
+   * @param {string} [campaignId] - 特定の作品で絞り込む場合
    * @returns {Array} レコード一覧（最新順）
    */
-  getAll() {
+  getAll(campaignId = null) {
     try {
       const data = localStorage.getItem(STORAGE_KEY);
-      return data ? JSON.parse(data) : [];
+      let list = data ? JSON.parse(data) : [];
+      // 下位互換マイグレーション: campaignId が無い古いレコードを補完
+      let modified = false;
+      const campaigns = this.getCampaigns();
+      const defaultCamp = campaigns[0] || DEFAULT_CAMPAIGNS[0];
+      
+      list = list.map(item => {
+        if (!item.campaignId) {
+          modified = true;
+          // singleTitleに合致するキャンペーンを探す
+          const matched = campaigns.find(c => item.singleTitle && c.title.includes(item.singleTitle));
+          item.campaignId = matched ? matched.id : defaultCamp.id;
+          item.campaignTitle = matched ? matched.title : (item.singleTitle || defaultCamp.title);
+          item.applyUrl = matched ? matched.applyUrl : defaultCamp.applyUrl;
+        }
+        return item;
+      });
+
+      if (modified) {
+        this._saveAll(list);
+      }
+
+      if (campaignId && campaignId !== 'all') {
+        return list.filter(item => item.campaignId === campaignId);
+      }
+      return list;
     } catch (e) {
       console.error('Storage get error:', e);
       return [];
     }
+  },
+
+  /**
+   * 作品・キャンペーン一覧の取得
+   */
+  getCampaigns() {
+    try {
+      const data = localStorage.getItem(CAMPAIGNS_KEY);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      // 初期データを保存
+      this.saveCampaigns(DEFAULT_CAMPAIGNS);
+      return [...DEFAULT_CAMPAIGNS];
+    } catch (e) {
+      console.error('Failed to get campaigns:', e);
+      return [...DEFAULT_CAMPAIGNS];
+    }
+  },
+
+  /**
+   * 作品一覧の保存
+   */
+  saveCampaigns(list) {
+    try {
+      localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(list));
+      return list;
+    } catch (e) {
+      console.error('Failed to save campaigns:', e);
+      return list;
+    }
+  },
+
+  /**
+   * 現在アクティブな作品IDの取得
+   */
+  getActiveCampaignId() {
+    const campaigns = this.getCampaigns();
+    const stored = localStorage.getItem(ACTIVE_CAMPAIGN_KEY);
+    if (stored && campaigns.some(c => c.id === stored)) {
+      return stored;
+    }
+    const defaultId = campaigns[0] ? campaigns[0].id : DEFAULT_CAMPAIGNS[0].id;
+    this.setActiveCampaignId(defaultId);
+    return defaultId;
+  },
+
+  /**
+   * 現在アクティブな作品オブジェクトの取得
+   */
+  getActiveCampaign() {
+    const id = this.getActiveCampaignId();
+    const campaigns = this.getCampaigns();
+    return campaigns.find(c => c.id === id) || campaigns[0] || DEFAULT_CAMPAIGNS[0];
+  },
+
+  /**
+   * アクティブな作品IDを設定
+   */
+  setActiveCampaignId(id) {
+    localStorage.setItem(ACTIVE_CAMPAIGN_KEY, id);
+  },
+
+  /**
+   * 新しい作品（シングル・アルバム）を追加
+   */
+  addCampaign(data) {
+    const campaigns = this.getCampaigns();
+    const id = data.id || ('camp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
+    
+    // 短縮タイトル生成
+    let shortTitle = data.shortTitle;
+    if (!shortTitle) {
+      const match = data.title.match(/『([^』]+)』|「([^」]+)」/);
+      if (match) {
+        shortTitle = match[1] || match[2];
+      } else {
+        shortTitle = data.title.substring(0, 20);
+      }
+    }
+
+    const newCampaign = {
+      id,
+      title: data.title.trim(),
+      shortTitle: shortTitle.trim(),
+      applyUrl: (data.applyUrl || '').trim(),
+      period: (data.period || '').trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    campaigns.unshift(newCampaign);
+    this.saveCampaigns(campaigns);
+    return newCampaign;
+  },
+
+  /**
+   * 作品情報の更新
+   */
+  updateCampaign(id, updates) {
+    const campaigns = this.getCampaigns();
+    const idx = campaigns.findIndex(c => c.id === id);
+    if (idx === -1) return null;
+
+    campaigns[idx] = { ...campaigns[idx], ...updates };
+    this.saveCampaigns(campaigns);
+
+    // 紐付くシリアルナンバー側の非正規化データも同期更新
+    if (updates.title || updates.applyUrl) {
+      const serials = this.getAll();
+      let updatedSerials = false;
+      serials.forEach(s => {
+        if (s.campaignId === id) {
+          if (updates.title) s.campaignTitle = updates.title;
+          if (updates.applyUrl) s.applyUrl = updates.applyUrl;
+          updatedSerials = true;
+        }
+      });
+      if (updatedSerials) {
+        this._saveAll(serials);
+      }
+    }
+
+    return campaigns[idx];
+  },
+
+  /**
+   * 作品の削除
+   */
+  deleteCampaign(id) {
+    let campaigns = this.getCampaigns();
+    if (campaigns.length <= 1) {
+      throw new Error('最低1つの作品は必要です。削除できません。');
+    }
+
+    campaigns = campaigns.filter(c => c.id !== id);
+    this.saveCampaigns(campaigns);
+
+    // 削除されたものがアクティブだった場合は先頭に切り替え
+    if (this.getActiveCampaignId() === id) {
+      this.setActiveCampaignId(campaigns[0].id);
+    }
+    return true;
   },
 
   /**
@@ -33,13 +223,19 @@ export const Storage = {
    * シリアル番号が既に存在するか重複チェック
    * @param {string} serial - 正規化されたシリアル文字列
    * @param {string} [excludeId] - 自身を除外する場合のID
+   * @param {string} [campaignId] - 作品単位で重複判定する場合（省略時は全件対象）
    * @returns {Object|null} 既存レコード、存在しなければnull
    */
-  checkDuplicate(serial, excludeId = null) {
+  checkDuplicate(serial, excludeId = null, campaignId = null) {
     if (!serial) return null;
     const clean = this.normalizeSerial(serial);
     const list = this.getAll();
-    return list.find(item => this.normalizeSerial(item.serial) === clean && item.id !== excludeId) || null;
+    return list.find(item => {
+      const match = this.normalizeSerial(item.serial) === clean && item.id !== excludeId;
+      if (!match) return false;
+      if (campaignId && item.campaignId !== campaignId) return false;
+      return true;
+    }) || null;
   },
 
   /**
@@ -50,13 +246,21 @@ export const Storage = {
   add(item) {
     const list = this.getAll();
     const cleanSerial = this.normalizeSerial(item.serial);
+    const activeCamp = this.getActiveCampaign();
+
+    const campaignId = item.campaignId || activeCamp.id;
+    const campaigns = this.getCampaigns();
+    const targetCamp = campaigns.find(c => c.id === campaignId) || activeCamp;
 
     const record = {
       id: 'sn_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       serial: cleanSerial,
       rawText: item.rawText || '',
       type: item.type || 'Type-A',
-      singleTitle: item.singleTitle || '13th Single 卒業写真だけが知ってる',
+      campaignId: targetCamp.id,
+      campaignTitle: targetCamp.title,
+      singleTitle: targetCamp.title, // 後方互換性
+      applyUrl: targetCamp.applyUrl,
       status: item.status || 'unused', // 'unused' | 'used'
       scanMethod: item.scanMethod || 'ocr', // 'ocr' | 'qr' | 'manual'
       createdAt: new Date().toISOString(),
@@ -138,9 +342,10 @@ export const Storage = {
 
   /**
    * 統計情報の集計
+   * @param {string} [campaignId] - 特定の作品で絞り込む場合
    */
-  getStats() {
-    const list = this.getAll();
+  getStats(campaignId = null) {
+    const list = this.getAll(campaignId);
     const total = list.length;
     const unused = list.filter(i => i.status === 'unused').length;
     const used = list.filter(i => i.status === 'used').length;
@@ -171,8 +376,8 @@ export const Storage = {
   /**
    * 全シリアルまたは条件合致シリアルのプレーンテキスト（改行区切り）
    */
-  exportAsText(filterStatus = 'all') {
-    let list = this.getAll();
+  exportAsText(filterStatus = 'all', campaignId = null) {
+    let list = this.getAll(campaignId);
     if (filterStatus !== 'all') {
       list = list.filter(item => item.status === filterStatus);
     }
@@ -182,15 +387,16 @@ export const Storage = {
   /**
    * CSVデータ生成 (UTF-8 BOM付きでExcel対応)
    */
-  exportAsCSV() {
-    const list = this.getAll();
-    const headers = ['シリアルナンバー', 'ステータス', '形態・盤種', '対象作品', '登録方式', '登録日時', '使用日時', 'メモ'];
+  exportAsCSV(campaignId = null) {
+    const list = this.getAll(campaignId);
+    const headers = ['シリアルナンバー', 'ステータス', '形態・盤種', '対象作品', '応募サイトURL', '登録方式', '登録日時', '使用日時', 'メモ'];
     
     const rows = list.map(item => [
       `"${this.formatSerialForDisplay(item.serial)}"`,
       `"${item.status === 'unused' ? '未応募' : '応募済'}"`,
       `"${item.type}"`,
-      `"${item.singleTitle}"`,
+      `"${item.campaignTitle || item.singleTitle || ''}"`,
+      `"${item.applyUrl || ''}"`,
       `"${item.scanMethod === 'qr' ? 'QRスキャン' : item.scanMethod === 'ocr' ? 'OCR文字読取' : '手動入力'}"`,
       `"${new Date(item.createdAt).toLocaleString('ja-JP')}"`,
       `"${item.usedAt ? new Date(item.usedAt).toLocaleString('ja-JP') : '-'}"`,
@@ -202,27 +408,55 @@ export const Storage = {
   },
 
   /**
-   * JSONバックアップの生成
+   * JSONバックアップの生成（作品リストも含む）
    */
   exportAsJSON() {
-    return JSON.stringify(this.getAll(), null, 2);
+    return JSON.stringify({
+      version: 2,
+      campaigns: this.getCampaigns(),
+      activeCampaignId: this.getActiveCampaignId(),
+      serials: this.getAll()
+    }, null, 2);
   },
 
   /**
-   * JSONからのインポート復元
+   * JSONからのインポート復元（旧バージョン配列形式・新バージョンオブジェクト形式両対応）
    */
   importJSON(jsonString) {
     try {
       const parsed = JSON.parse(jsonString);
-      if (!Array.isArray(parsed)) throw new Error('データ形式が無効です');
+      let serialItems = [];
+      let importedCampaignsCount = 0;
+
+      if (Array.isArray(parsed)) {
+        serialItems = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        serialItems = parsed.serials || [];
+        if (Array.isArray(parsed.campaigns)) {
+          const currentCampaigns = this.getCampaigns();
+          parsed.campaigns.forEach(c => {
+            if (c.id && !currentCampaigns.some(cc => cc.id === c.id)) {
+              currentCampaigns.push(c);
+              importedCampaignsCount++;
+            }
+          });
+          this.saveCampaigns(currentCampaigns);
+        }
+        if (parsed.activeCampaignId) {
+          this.setActiveCampaignId(parsed.activeCampaignId);
+        }
+      } else {
+        throw new Error('データ形式が無効です');
+      }
       
       const currentList = this.getAll();
       const existingSerials = new Set(currentList.map(item => this.normalizeSerial(item.serial)));
+      const activeCamp = this.getActiveCampaign();
       
       let imported = 0;
       let skipped = 0;
 
-      parsed.forEach(item => {
+      serialItems.forEach(item => {
         if (!item.serial) return;
         const norm = this.normalizeSerial(item.serial);
         if (existingSerials.has(norm)) {
@@ -233,7 +467,10 @@ export const Storage = {
             serial: norm,
             rawText: item.rawText || '',
             type: item.type || 'Type-A',
-            singleTitle: item.singleTitle || '日向坂46 シングル',
+            campaignId: item.campaignId || activeCamp.id,
+            campaignTitle: item.campaignTitle || item.singleTitle || activeCamp.title,
+            singleTitle: item.singleTitle || activeCamp.title,
+            applyUrl: item.applyUrl || activeCamp.applyUrl,
             status: item.status || 'unused',
             scanMethod: item.scanMethod || 'import',
             createdAt: item.createdAt || new Date().toISOString(),
@@ -246,7 +483,7 @@ export const Storage = {
       });
 
       this._saveAll(currentList);
-      return { success: true, imported, skipped };
+      return { success: true, imported, skipped, importedCampaigns: importedCampaignsCount };
     } catch (e) {
       console.error('Import error:', e);
       return { success: false, error: e.message };
@@ -265,7 +502,7 @@ export const Storage = {
         continuousScan: false,
         autoCopyOnScan: false,
         defaultType: 'Type-A',
-        defaultTitle: '13th Single 卒業写真だけが知ってる',
+        defaultTitle: '日向坂46 18thシングル『イチャイチャ虫』',
         geminiApiKey: ''
       };
       return data ? { ...defaults, ...JSON.parse(data) } : defaults;
