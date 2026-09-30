@@ -226,9 +226,10 @@ export class ScannerEngine {
       });
 
       // 日向坂46仕様: 英大文字と数字の14文字連続（ハイフンなし）にホワイトリストを限定
+      // PSM.SINGLE_BLOCK (6): 上下の罫線や注意書きが混ざった画像・1行画像双方に耐性を持つ標準モード
       await worker.setParameters({
         tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
-        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE
+        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK
       });
 
       this.tesseractWorker = worker;
@@ -576,13 +577,45 @@ ${suffixHint}
     // 3. OCRエンジンの準備
     const worker = await this.initTesseract(options.onProgress);
 
-    // 4. OCR実行
-    const result = await worker.recognize(processedCanvas);
-    const rawText = result.data.text || '';
-    const confidence = result.data.confidence;
+    // 4. OCR実行（マルチパス認識戦略）
+    // パス1: SINGLE_BLOCK（単一ブロック: 罫線や周辺文字、複数行が混ざった画像に対応）
+    await worker.setParameters({
+      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK
+    });
 
-    // 5. シリアルナンバー候補の抽出 & クリーニング (expectedSuffixヒント活用)
-    const extracted = this.parseCandidateSerials(rawText, expectedSuffix);
+    let result = await worker.recognize(processedCanvas);
+    let rawText = result.data.text || '';
+    let confidence = result.data.confidence;
+    let extracted = this.parseCandidateSerials(rawText, expectedSuffix);
+
+    // パス2（フォールバック）: 14文字シリアルが見つからなかった場合、SINGLE_LINE（単一行）で再試行
+    if (!extracted.bestCandidate) {
+      await worker.setParameters({
+        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE
+      });
+      const res2 = await worker.recognize(processedCanvas);
+      const text2 = res2.data.text || '';
+      const ext2 = this.parseCandidateSerials(text2, expectedSuffix);
+      if (ext2.bestCandidate) {
+        rawText = text2;
+        confidence = res2.data.confidence;
+        extracted = ext2;
+      } else {
+        // パス3: 完全自動レイアウト解析（AUTO）
+        await worker.setParameters({
+          tessedit_pageseg_mode: Tesseract.PSM.AUTO
+        });
+        const res3 = await worker.recognize(processedCanvas);
+        const text3 = res3.data.text || '';
+        const ext3 = this.parseCandidateSerials(text3, expectedSuffix);
+        if (ext3.bestCandidate) {
+          rawText = text3;
+          confidence = res3.data.confidence;
+          extracted = ext3;
+        }
+      }
+    }
 
     this.onStatusChange({ status: 'done', message: '解析完了' });
     if (extracted.bestCandidate) {
@@ -680,8 +713,14 @@ ${suffixHint}
     }
 
     // 3. Qiita流 クリーン・グレースケール拡大（二値化を行わない高精度階調処理）
-    // OCR認識精度向上のための適正解像度へのリサイズ（幅1200〜1600px）
-    const targetWidth = Math.max(1200, Math.min(1800, Math.round(sWidth * 2.2)));
+    // OCR認識精度向上のための適正解像度へのリサイズ（幅1000〜1400px）
+    // 小さなカメラ枠クロップは拡大し、すでに高解像度な画像（写真アップロード等）は適正幅に保つ
+    let targetWidth;
+    if (sWidth < 700) {
+      targetWidth = Math.max(900, Math.min(1300, Math.round(sWidth * 2.0)));
+    } else {
+      targetWidth = Math.max(1000, Math.min(1400, Math.round(sWidth * 1.1)));
+    }
     const targetHeight = Math.round(sHeight * (targetWidth / sWidth));
 
     const pad = 40; // 上下左右に40pxの純白パディング（Tesseract境界認識の向上）
@@ -857,8 +896,9 @@ ${suffixHint}
       'O': ['0', 'Q', 'D'],
       '1': ['I', 'L', 'T', '7'],
       'I': ['1', 'L', 'T', '7'],
-      '8': ['B', '3', '6', 'S'],
-      'B': ['8', '6', '3'],
+      '8': ['B', '3', '6', 'S', 'E'],
+      'B': ['8', '6', '3', 'E'],
+      'E': ['8', 'B', '3'],
       '3': ['S', '8', 'B', 'E', '5'],
       'S': ['3', '5', '8'],
       '5': ['S', '6', '3'],

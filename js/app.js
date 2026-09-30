@@ -805,6 +805,7 @@ class SoraScanApp {
     // 相互反転ペアマップ
     const toggleMap = {
       'B': '8', '8': 'B',
+      'E': '8',
       'S': '3', '3': 'S',
       '5': 'S',
       'O': '0', '0': 'O',

@@ -8,4 +8,10 @@ Thumbs.db
 *.htm
 *_files/
 sample-ticket.jpg
+debug-user-img.jpg
+test-user-debug.html
 compare-binarization.html
+node_modules/
+package.json
+package-lock.json
+
