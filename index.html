@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#070D18">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="日向坂46のCD封入スペシャル抽選応募シリアルナンバーを撮影・OCR抽出して管理・登録するWebアプリ">
+
+  <title>SoraScan - 日向坂46シリアルナンバー自動抽出・登録</title>
+
+  <!-- PWA Manifest & App Icons -->
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
+  <link rel="apple-touch-icon" href="./icons/icon.svg">
+
+  <!-- Google Fonts: Outfit & Inter & Noto Sans JP -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="./css/style.css">
+
+  <!-- External Libraries (CDN) -->
+  <!-- Tesseract.js v5 for OCR -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <!-- jsQR for real-time QR code reading -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <!-- QRCode.js for sample ticket generation -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+</head>
+<body>
+
+  <!-- Top App Header -->
+  <header class="app-header">
+    <div class="brand">
+      <img src="./icons/icon.svg" alt="SoraScan Logo" class="brand-icon">
+      <div class="brand-text">
+        <h1>SoraScan</h1>
+        <div class="tagline">日向坂46 シリアルスキャナー</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="btnOpenSettings" class="icon-btn" aria-label="設定" title="設定・バックアップ">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main View Container -->
+  <main class="app-container">
+
+    <!-- ========================================== -->
+    <!-- View 1: Scanner (Camera / File) -->
+    <!-- ========================================== -->
+    <section id="viewScanner" class="view-panel active">
+      <div class="scanner-card">
+        
+        <!-- Viewfinder Box -->
+        <div class="viewfinder-wrapper" id="viewfinderWrapper">
+          <video id="cameraVideo" playsinline muted autoplay></video>
+          
+          <!-- Floating Controls on Viewfinder -->
+          <div class="camera-controls-floating">
+            <button id="btnSwitchCamera" class="floating-btn" aria-label="カメラ切替" title="カメラ切替">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+              </svg>
+            </button>
+            <button id="btnToggleTorch" class="floating-btn" aria-label="ライト点灯" title="ライト">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Guide Overlay Frame -->
+          <div class="viewfinder-overlay">
+            <div class="target-box" id="cropTargetBox">
+              <div class="corner corner-tl"></div>
+              <div class="corner corner-tr"></div>
+              <div class="corner corner-bl"></div>
+              <div class="corner corner-br"></div>
+              <div class="laser-beam"></div>
+            </div>
+            <div class="target-guide-text">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              枠内にシリアル番号またはQRを合わせてください
+            </div>
+          </div>
+        </div>
+
+        <!-- Scanner Controls Area -->
+        <div class="scanner-controls">
+
+          <!-- Continuous Scan Toggle (Batch Mode) -->
+          <div class="mode-toggle-group">
+            <div class="toggle-label">
+              <div class="toggle-title">
+                連続スキャン（まとめ打ち）
+                <span class="badge-ohisama">人気</span>
+              </div>
+              <div class="toggle-desc">読み取り後、確認なしで次々と自動ストック</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="checkContinuous">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="action-grid">
+            <button id="btnCaptureOCR" class="btn-primary">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19 4h-3.17L14.4 2H9.6L8.17 4H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z"/>
+              </svg>
+              シリアルを撮影・読み取る (OCR)
+            </button>
+
+            <!-- File Upload alternative -->
+            <label for="fileImageUpload" class="btn-secondary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              アルバム写真から選択
+              <input type="file" id="fileImageUpload" accept="image/*" capture="environment" style="display:none;">
+            </label>
+
+            <!-- Manual Serial Input button -->
+            <button id="btnManualInput" class="btn-secondary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+              </svg>
+              手動で入力
+            </button>
+          </div>
+
+          <!-- Status Pill -->
+          <div class="status-pill">
+            <span class="status-dot pulsing" id="statusDot"></span>
+            <span id="statusMessage">カメラ準備完了（QRコードは自動検知）</span>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- View 2: Serials Management (List & Stats) -->
+    <!-- ========================================== -->
+    <section id="viewList" class="view-panel">
+      
+      <!-- Stats Summary -->
+      <div class="stats-bar">
+        <div class="stat-card stat-total">
+          <div class="stat-num" id="statTotal">0</div>
+          <div class="stat-label">総登録数</div>
+        </div>
+        <div class="stat-card stat-unused">
+          <div class="stat-num" id="statUnused">0</div>
+          <div class="stat-label">未応募（残数）</div>
+        </div>
+        <div class="stat-card stat-used">
+          <div class="stat-num" id="statUsed">0</div>
+          <div class="stat-label">応募完了</div>
+        </div>
+      </div>
+
+      <!-- Batch Actions Bar -->
+      <div class="batch-actions-bar">
+        <button id="btnCopyUnused" class="batch-btn" title="未応募のシリアルをまとめてコピー">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          未応募を一括コピー
+        </button>
+
+        <button id="btnExportCSV" class="batch-btn" title="Excel対応のCSV形式で保存">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          CSV保存
+        </button>
+
+        <!-- Official Lottery Site Link -->
+        <a href="https://ticket.fortunemusic.app/" target="_blank" rel="noopener noreferrer" class="batch-btn fortune-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+          公式応募サイトを開く
+        </a>
+      </div>
+
+      <!-- Search & Filters -->
+      <div class="list-toolbar">
+        <div class="search-input-wrapper">
+          <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="search" id="searchInput" class="search-input" placeholder="シリアル番号や盤種を検索...">
+        </div>
+
+        <div class="filter-pills">
+          <button class="pill-btn active" data-filter="all">すべて</button>
+          <button class="pill-btn" data-filter="unused">未応募</button>
+          <button class="pill-btn" data-filter="used">応募済</button>
+        </div>
+      </div>
+
+      <!-- Dynamic Serial Cards List -->
+      <div class="serial-list" id="serialListContainer">
+        <!-- Rendered by JS -->
+      </div>
+
+      <!-- Empty State -->
+      <div class="empty-state" id="emptyState" style="display:none;">
+        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        <div class="empty-title">シリアルナンバーがありません</div>
+        <div class="empty-desc">「スキャン」タブからCD封入券を撮影するか、模擬券でテストしてみてください。</div>
+        <button id="btnEmptyGoScan" class="btn-primary" style="margin: 0 auto; max-width: 220px; font-size: 0.9rem;">
+          スキャンを始める
+        </button>
+      </div>
+
+    </section>
+
+    <!-- ========================================== -->
+    <!-- View 3: Simulator (Mock Ticket Generator) -->
+    <!-- ========================================== -->
+    <section id="viewSimulator" class="view-panel">
+      <div class="simulator-card">
+        <div class="simulator-header">
+          <h2>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            </svg>
+            模擬シリアル応募券プレビュー
+          </h2>
+          <p>手元にCDがなくても、本物そっくりの日向坂46応募券でスキャンの精度や登録フローを検証できます。</p>
+        </div>
+
+        <div class="mock-canvas-wrapper">
+          <canvas id="mockTicketCanvas"></canvas>
+        </div>
+
+        <div class="sim-actions">
+          <button id="btnRegenerateTicket" class="btn-secondary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            別の模擬券を再生成
+          </button>
+
+          <button id="btnScanCurrentMock" class="btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            この券をスキャン解析
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================== -->
+  <!-- Modal: Confirmation & Correction -->
+  <!-- ========================================== -->
+  <div class="modal-backdrop" id="modalConfirm">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sky-blue)" stroke-width="2.5">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          シリアルナンバーの確認・登録
+        </div>
+        <button class="icon-btn" id="btnCloseConfirmModal" aria-label="閉じる">✕</button>
+      </div>
+
+      <div class="modal-body">
+        
+        <!-- Duplicate Warning (if already exists) -->
+        <div class="duplicate-alert" id="modalDuplicateAlert" style="display:none;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <span>このシリアル番号は既に登録されています！</span>
+        </div>
+
+        <!-- Serial Display / Direct Editable Input -->
+        <div class="serial-result-display">
+          <input type="text" id="modalSerialInput" class="serial-result-input" spellcheck="false" autocomplete="off" placeholder="XXXX-XXXX-XXXX-XXXX">
+        </div>
+
+        <!-- Quick Char Correction Helper (for OCR misreads) -->
+        <div class="char-helper-row">
+          <span>誤読ワンタップ置換:</span>
+          <button type="button" class="helper-btn" data-replace-from="O" data-replace-to="0">O → 0</button>
+          <button type="button" class="helper-btn" data-replace-from="0" data-replace-to="O">0 → O</button>
+          <button type="button" class="helper-btn" data-replace-from="I" data-replace-to="1">I → 1</button>
+          <button type="button" class="helper-btn" data-replace-from="1" data-replace-to="I">1 → I</button>
+          <button type="button" class="helper-btn" data-replace-from="B" data-replace-to="8">B → 8</button>
+          <button type="button" class="helper-btn" data-replace-from="8" data-replace-to="B">8 → B</button>
+        </div>
+
+        <!-- Type Select -->
+        <div class="form-group">
+          <label class="form-label" for="modalTypeSelect">CD形態・盤種</label>
+          <select id="modalTypeSelect" class="form-select">
+            <option value="Type-A">初回仕様限定盤 Type-A</option>
+            <option value="Type-B">初回仕様限定盤 Type-B</option>
+            <option value="Type-C">初回仕様限定盤 Type-C</option>
+            <option value="Type-D">初回仕様限定盤 Type-D</option>
+            <option value="通常盤">通常盤</option>
+            <option value="アルバム">アルバム限定盤</option>
+          </select>
+        </div>
+
+        <!-- Single Title -->
+        <div class="form-group">
+          <label class="form-label" for="modalSingleTitleInput">対象シングル・作品名</label>
+          <input type="text" id="modalSingleTitleInput" class="form-input" value="13th Single 卒業写真だけが知ってる">
+        </div>
+
+        <!-- Note -->
+        <div class="form-group">
+          <label class="form-label" for="modalNoteInput">メモ（応募先イベント・応募枠など）</label>
+          <input type="text" id="modalNoteInput" class="form-input" placeholder="例: オンラインミート＆グリート 3部など">
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button id="btnModalSaveAndNext" class="btn-secondary">
+          保存して次をスキャン
+        </button>
+        <button id="btnModalSave" class="btn-primary" style="padding: 10px 20px;">
+          保存して一覧へ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- Modal: Settings & Backup -->
+  <!-- ========================================== -->
+  <div class="modal-backdrop" id="modalSettings">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sky-blue)" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          アプリ設定 & データ管理
+        </div>
+        <button class="icon-btn" id="btnCloseSettingsModal" aria-label="閉じる">✕</button>
+      </div>
+
+      <div class="modal-body">
+        
+        <div class="mode-toggle-group">
+          <div class="toggle-label">
+            <div class="toggle-title">読み取り成功音</div>
+            <div class="toggle-desc">スキャン成功時にチャイム音を再生</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="checkSoundEnabled" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="mode-toggle-group">
+          <div class="toggle-label">
+            <div class="toggle-title">触感バイブレーション</div>
+            <div class="toggle-desc">読み取り時にスマホを振動（Android等）</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="checkVibrationEnabled" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid var(--glass-border); margin: 4px 0;">
+
+        <!-- Backup & Restore -->
+        <div class="form-group">
+          <label class="form-label">バックアップとデータ移行 (JSON)</label>
+          <div style="display: flex; gap: 8px;">
+            <button id="btnBackupExport" class="btn-secondary" style="flex: 1;">
+              バックアップ書き出し
+            </button>
+            <label for="fileBackupImport" class="btn-secondary" style="flex: 1; text-align: center; cursor: pointer;">
+              復元（インポート）
+              <input type="file" id="fileBackupImport" accept=".json" style="display: none;">
+            </label>
+          </div>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="form-group" style="margin-top: 8px;">
+          <label class="form-label" style="color: #EF4444;">危険な操作</label>
+          <button id="btnClearAllSerials" class="btn-secondary" style="color: #EF4444; border-color: rgba(239, 68, 68, 0.4);">
+            登録データをすべて削除
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- Bottom Navigation Bar (Mobile) -->
+  <!-- ========================================== -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-tab="viewScanner">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+        <circle cx="12" cy="13" r="4"></circle>
+      </svg>
+      <span class="nav-label">スキャン</span>
+    </button>
+
+    <button class="nav-item" data-tab="viewList">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="8" y1="6" x2="21" y2="6"></line>
+        <line x1="8" y1="12" x2="21" y2="12"></line>
+        <line x1="8" y1="18" x2="21" y2="18"></line>
+        <line x1="3" y1="6" x2="3.01" y2="6"></line>
+        <line x1="3" y1="12" x2="3.01" y2="12"></line>
+        <line x1="3" y1="18" x2="3.01" y2="18"></line>
+      </svg>
+      <span class="nav-label">シリアル一覧</span>
+      <span class="nav-badge" id="navBadgeCount" style="display:none;">0</span>
+    </button>
+
+    <button class="nav-item" data-tab="viewSimulator">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+        <line x1="8" y1="21" x2="16" y2="21"></line>
+        <line x1="12" y1="17" x2="12" y2="21"></line>
+      </svg>
+      <span class="nav-label">模擬券テスト</span>
+    </button>
+  </nav>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Application Main Logic -->
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

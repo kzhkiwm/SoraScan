@@ -1,0 +1,19 @@
+{
+  "name": "SoraScan - 日向坂46シリアルスキャナー",
+  "short_name": "SoraScan",
+  "description": "日向坂46スペシャル抽選応募シリアルナンバー自動抽出・登録管理アプリ",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0B1528",
+  "theme_color": "#67C2F0",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "entertainment"]
+}
