@@ -228,7 +228,7 @@ export class ScannerEngine {
       // 日向坂46仕様: 英大文字と数字の14文字連続（ハイフンなし）にホワイトリストを限定
       await worker.setParameters({
         tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
-        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK
+        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE
       });
 
       this.tesseractWorker = worker;
@@ -654,47 +654,74 @@ ${suffixHint}
       }
     }
 
-    // OCR認識精度向上のための適正解像度へのリサイズ（幅1200〜1600px）
-    const targetWidth = Math.max(1000, Math.min(1800, Math.round(sWidth)));
-    const targetHeight = Math.round(sHeight * (targetWidth / sWidth));
+    // 1. クロップ領域の画像を一時Canvas（cropCanvas）に描画
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = sWidth;
+    cropCanvas.height = sHeight;
+    const cCtx = cropCanvas.getContext('2d');
+    cCtx.drawImage(source, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
 
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
+    // 2. 自動傾き検出＆水平化 (Auto-Deskew)
+    // 撮影時の斜め傾き（数度）による文字上下欠損を防止
+    const skewAngle = this.estimateSkewAngle(cropCanvas);
+    let deskewedCanvas = cropCanvas;
 
-    // クロップ領域を描画（白背景マージン付きで境界ノイズ防止）
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, targetWidth, targetHeight);
-    ctx.drawImage(source, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
-
-    // 高度な局所適応的二値化（Bradley-Roth / Integral Image アルゴリズム）
-    // 照明ムラや斜めの影があっても文字の輪郭だけを確実に黒く抽出
-    const imgData = ctx.getImageData(0, 0, targetWidth, targetHeight);
-    const data = imgData.data;
-    const w = targetWidth;
-    const h = targetHeight;
-
-    // 1. グレースケール変換配列の作成
-    const gray = new Uint8Array(w * h);
-    for (let i = 0, j = 0; i < data.length; i += 4, j++) {
-      gray[j] = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) | 0;
+    if (Math.abs(skewAngle) >= 0.3) {
+      deskewedCanvas = document.createElement('canvas');
+      deskewedCanvas.width = sWidth;
+      deskewedCanvas.height = sHeight;
+      const dCtx = deskewedCanvas.getContext('2d');
+      dCtx.fillStyle = '#FFFFFF';
+      dCtx.fillRect(0, 0, sWidth, sHeight);
+      dCtx.translate(sWidth / 2, sHeight / 2);
+      dCtx.rotate(-skewAngle * Math.PI / 180.0);
+      dCtx.translate(-sWidth / 2, -sHeight / 2);
+      dCtx.drawImage(cropCanvas, 0, 0);
     }
 
-    // 2. 積分画像（Integral Image）の計算
+    // 3. Qiita流 クリーン・グレースケール拡大（二値化を行わない高精度階調処理）
+    // OCR認識精度向上のための適正解像度へのリサイズ（幅1200〜1600px）
+    const targetWidth = Math.max(1200, Math.min(1800, Math.round(sWidth * 2.2)));
+    const targetHeight = Math.round(sHeight * (targetWidth / sWidth));
+
+    const pad = 40; // 上下左右に40pxの純白パディング（Tesseract境界認識の向上）
+    canvas.width = targetWidth + pad * 2;
+    canvas.height = targetHeight + pad * 2;
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(deskewedCanvas, 0, 0, sWidth, sHeight, pad, pad, targetWidth, targetHeight);
+
+    // 4. 階調を維持した背景白マスク化（Qiita流）
+    // 局所適応的な白背景化マスクを生成し、背景の影・グラデーションを純白(255)に飛ばしつつ、
+    // 文字本体はコントラスト正規化した滑らかなグレースケール（アンチエイリアス維持）で出力
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imgData.data;
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // グレースケール変換 (Rec. 709)
+    const gray = new Float32Array(w * h);
+    for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+      gray[j] = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    }
+
+    // 積分画像（Integral Image）の計算
     const integral = new Float64Array(w * h);
     for (let x = 0; x < w; x++) {
       let sum = 0;
       for (let y = 0; y < h; y++) {
-        const index = y * w + x;
-        sum += gray[index];
-        integral[index] = (x === 0 ? 0 : integral[index - 1]) + sum;
+        const idx = y * w + x;
+        sum += gray[idx];
+        integral[idx] = (x === 0 ? 0 : integral[idx - 1]) + sum;
       }
     }
 
-    // 3. 局所適応的二値化の適用
-    // 局所ウィンドウサイズ（画像の約1/16）
     const s = Math.max(8, Math.round(w / 18));
     const s2 = Math.round(s / 2);
-    const t = 0.14; // 近傍平均より14%以上暗いピクセルを黒文字と判定
+    const t = 0.10; // 最適閾値
 
     for (let y = 0; y < h; y++) {
       const y1 = Math.max(0, y - s2);
@@ -703,25 +730,113 @@ ${suffixHint}
         const x1 = Math.max(0, x - s2);
         const x2 = Math.min(w - 1, x + s2);
         const count = (x2 - x1) * (y2 - y1);
-
-        // 積分画像から近傍領域の合計輝度をO(1)で取得
         const sum = integral[y2 * w + x2] - integral[y1 * w + x2] - integral[y2 * w + x1] + integral[y1 * w + x1];
-        const currentVal = gray[y * w + x];
-
-        // 閾値判定
-        const isText = (currentVal * count) < (sum * (1.0 - t));
-        const outVal = isText ? 0 : 255;
+        const curr = gray[y * w + x];
+        const isText = (curr * count) < (sum * (1.0 - t));
 
         const pIdx = (y * w + x) * 4;
-        data[pIdx] = outVal;
-        data[pIdx + 1] = outVal;
-        data[pIdx + 2] = outVal;
+        if (isText) {
+          // 文字本体: 局所平均との比率でコントラスト強調したグレースケール（アンチエイリアス保持）
+          const localMean = sum / count;
+          let normVal = Math.round((curr / localMean) * 200);
+          normVal = Math.max(0, Math.min(180, normVal));
+          data[pIdx] = normVal;
+          data[pIdx + 1] = normVal;
+          data[pIdx + 2] = normVal;
+        } else {
+          // 背景: 純白
+          data[pIdx] = 255;
+          data[pIdx + 1] = 255;
+          data[pIdx + 2] = 255;
+        }
         data[pIdx + 3] = 255;
       }
     }
 
     ctx.putImageData(imgData, 0, 0);
     return canvas;
+  }
+
+  /**
+   * 水平投影プロファイルによる傾き角度（Deskew Angle）自動検出
+   * @param {HTMLCanvasElement} canvas
+   * @returns {number} 傾き角度（度数法）
+   */
+  estimateSkewAngle(canvas) {
+    const sw = Math.min(320, canvas.width);
+    const sh = Math.min(160, canvas.height);
+    const thumb = document.createElement('canvas');
+    thumb.width = sw;
+    thumb.height = sh;
+    const tCtx = thumb.getContext('2d');
+    tCtx.drawImage(canvas, 0, 0, sw, sh);
+
+    const imgData = tCtx.getImageData(0, 0, sw, sh);
+    const d = imgData.data;
+    const gray = new Uint8Array(sw * sh);
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+      gray[j] = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0;
+    }
+
+    let bestAngle = 0;
+    let maxVariance = -1;
+    const cx = sw / 2;
+    const cy = sh / 2;
+
+    // -5.0度 〜 +5.0度 を 0.25度刻みで探索
+    for (let deg = -5.0; deg <= 5.0; deg += 0.25) {
+      const rad = (deg * Math.PI) / 180.0;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+
+      const startY = Math.round(sh * 0.15);
+      const endY = Math.round(sh * 0.85);
+      const numRows = endY - startY;
+      const rowSums = new Float64Array(numRows);
+      let totalSum = 0;
+      let validSamples = 0;
+
+      for (let r = 0; r < numRows; r++) {
+        const y = startY + r;
+        let rowSum = 0;
+        let rowCount = 0;
+
+        for (let x = Math.round(sw * 0.1); x < Math.round(sw * 0.9); x += 2) {
+          const dx = x - cx;
+          const dy = y - cy;
+          const srcX = Math.round(cx + dx * cos - dy * sin);
+          const srcY = Math.round(cy + dx * sin + dy * cos);
+
+          if (srcX >= 0 && srcX < sw && srcY >= 0 && srcY < sh) {
+            rowSum += (255 - gray[srcY * sw + srcX]); // 黒文字に高い重み
+            rowCount++;
+          }
+        }
+
+        if (rowCount > 0) {
+          rowSums[r] = rowSum / rowCount;
+          totalSum += rowSums[r];
+          validSamples++;
+        }
+      }
+
+      if (validSamples > 0) {
+        const mean = totalSum / validSamples;
+        let variance = 0;
+        for (let r = 0; r < validSamples; r++) {
+          const diff = rowSums[r] - mean;
+          variance += diff * diff;
+        }
+        variance /= validSamples;
+
+        if (variance > maxVariance) {
+          maxVariance = variance;
+          bestAngle = deg;
+        }
+      }
+    }
+
+    return bestAngle;
   }
 
   /**
@@ -734,7 +849,7 @@ ${suffixHint}
     if (!tail || !target || tail.length !== 2 || target.length !== 2) return false;
     if (tail === target) return true;
 
-    // OCR混同文字テーブル
+    // OCR混同文字テーブル (3↔S, 3↔8↔B, S↔5等)
     const confusableMap = {
       'T': ['I', '1', '7', 'L', 'J', 'Y'],
       'N': ['M', 'H', 'W', 'U', 'K', 'V'],
@@ -743,11 +858,12 @@ ${suffixHint}
       '1': ['I', 'L', 'T', '7'],
       'I': ['1', 'L', 'T', '7'],
       '8': ['B', '3', '6', 'S'],
-      'B': ['8', '6'],
+      'B': ['8', '6', '3'],
+      '3': ['S', '8', 'B', 'E', '5'],
+      'S': ['3', '5', '8'],
+      '5': ['S', '6', '3'],
       '2': ['Z'],
-      'Z': ['2'],
-      '5': ['S'],
-      'S': ['5', '8']
+      'Z': ['2']
     };
 
     const isCharMatchOrConfusable = (c1, c2) => {

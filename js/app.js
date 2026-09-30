@@ -780,6 +780,61 @@ class SoraScanApp {
         this.modalSuffixFeedback.style.display = 'none';
       }
     }
+
+    // 1文字ピンポイント反転エディタの描画
+    this.renderCharPicker(clean);
+  }
+
+  /**
+   * 1文字ピンポイント反転エディタ（B⇄8, S⇄3等のワンタップ個別修正）
+   * @param {string} cleanSerial - 正規化されたシリアル文字列
+   */
+  renderCharPicker(cleanSerial) {
+    const container = document.getElementById('modalCharPicker');
+    const grid = document.getElementById('modalCharChips');
+    if (!container || !grid) return;
+
+    if (!cleanSerial || cleanSerial.length < 6) {
+      container.style.display = 'none';
+      return;
+    }
+
+    container.style.display = 'flex';
+    grid.innerHTML = '';
+
+    // 相互反転ペアマップ
+    const toggleMap = {
+      'B': '8', '8': 'B',
+      'S': '3', '3': 'S',
+      '5': 'S',
+      'O': '0', '0': 'O',
+      'I': '1', '1': 'I',
+      'Z': '2', '2': 'Z'
+    };
+
+    const chars = cleanSerial.split('');
+    chars.forEach((ch, idx) => {
+      const chip = document.createElement('div');
+      const target = toggleMap[ch];
+      const isConfusable = Boolean(target);
+
+      chip.className = `char-chip ${isConfusable ? 'is-confusable' : ''}`;
+      chip.textContent = ch;
+      chip.title = isConfusable ? `${idx + 1}文字目: 「${ch}」を「${target}」に反転` : `${idx + 1}文字目: ${ch}`;
+
+      if (isConfusable) {
+        chip.addEventListener('click', (e) => {
+          e.preventDefault();
+          chars[idx] = target;
+          const newSerial = chars.join('');
+          this.modalSerialInput.value = Storage.formatSerialForDisplay(newSerial);
+          this.validateModalDuplicate();
+          this.showToast(`🎯 ${idx + 1}文字目を「${ch}」→「${target}」に反転しました`);
+        });
+      }
+
+      grid.appendChild(chip);
+    });
   }
 
   /**

@@ -397,15 +397,27 @@
           <div id="modalSuffixFeedback" class="suffix-feedback-badge" style="display:none; margin-top: 6px;"></div>
         </div>
 
+        <!-- Interactive Single-Character Pinpoint Toggle Editor -->
+        <div id="modalCharPicker" class="char-picker-container" style="display:none;">
+          <div class="char-picker-title">
+            <span>🎯 1文字ピンポイント反転 (タップしてB⇄8やS⇄3を修正):</span>
+          </div>
+          <div id="modalCharChips" class="char-chips-grid"></div>
+        </div>
+
         <!-- Quick Char Correction Helper (for OCR misreads) -->
         <div class="char-helper-row">
-          <span>誤読ワンタップ置換:</span>
+          <span>誤読一括置換:</span>
+          <button type="button" class="helper-btn" data-replace-from="B" data-replace-to="8">B → 8</button>
+          <button type="button" class="helper-btn" data-replace-from="8" data-replace-to="B">8 → B</button>
+          <button type="button" class="helper-btn" data-replace-from="S" data-replace-to="3" style="border-color:var(--sky-blue); color:var(--sky-blue);">S → 3</button>
+          <button type="button" class="helper-btn" data-replace-from="3" data-replace-to="S" style="border-color:var(--sky-blue); color:var(--sky-blue);">3 → S</button>
+          <button type="button" class="helper-btn" data-replace-from="S" data-replace-to="5">S → 5</button>
+          <button type="button" class="helper-btn" data-replace-from="5" data-replace-to="S">5 → S</button>
           <button type="button" class="helper-btn" data-replace-from="O" data-replace-to="0">O → 0</button>
           <button type="button" class="helper-btn" data-replace-from="0" data-replace-to="O">0 → O</button>
           <button type="button" class="helper-btn" data-replace-from="I" data-replace-to="1">I → 1</button>
           <button type="button" class="helper-btn" data-replace-from="1" data-replace-to="I">1 → I</button>
-          <button type="button" class="helper-btn" data-replace-from="B" data-replace-to="8">B → 8</button>
-          <button type="button" class="helper-btn" data-replace-from="8" data-replace-to="B">8 → B</button>
         </div>
 
 

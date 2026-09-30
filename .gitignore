@@ -7,3 +7,5 @@ Thumbs.db
 # User saved external HTML & assets (for privacy)
 *.htm
 *_files/
+sample-ticket.jpg
+compare-binarization.html
