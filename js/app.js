@@ -357,6 +357,11 @@ class SoraScanApp {
     if (!this.statusMessage || !this.statusDot) return;
     this.statusMessage.textContent = info.message;
 
+    const httpsBanner = document.getElementById('httpsWarningBanner');
+    if (httpsBanner) {
+      httpsBanner.style.display = info.isHttpsIssue ? 'block' : 'none';
+    }
+
     if (info.status === 'processing' || info.status === 'ocr_loading') {
       this.statusDot.style.background = '#FFCE54';
       this.statusDot.classList.add('pulsing');

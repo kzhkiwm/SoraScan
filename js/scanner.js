@@ -41,6 +41,19 @@ export class ScannerEngine {
       constraints.video.deviceId = { exact: preferredDeviceId };
     }
 
+    // セキュアコンテキストチェック (HTTPS or localhost)
+    if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      const errMsg = '【HTTP接続の制限】スマートフォンのブラウザ仕様により、HTTPS接続（またはchrome://flags設定）がない場合カメラがブロックされます。「アルバム写真から選択」をご利用いただくか、HTTPS環境でお試しください。';
+      this.onStatusChange({ status: 'error', message: errMsg, isHttpsIssue: true });
+      return false;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const errMsg = 'ブラウザがカメラ機能（getUserMedia）に対応していないか、HTTP接続のため無効化されています。';
+      this.onStatusChange({ status: 'error', message: errMsg, isHttpsIssue: true });
+      return false;
+    }
+
     try {
       this.onStatusChange({ status: 'starting', message: 'カメラを起動しています...' });
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -53,10 +66,12 @@ export class ScannerEngine {
     } catch (err) {
       console.error('Camera access error:', err);
       let errMsg = 'カメラの起動に失敗しました。';
-      if (err.name === 'NotAllowedError') {
-        errMsg = 'カメラの使用が許可されていません。ブラウザ設定でカメラを許可してください。';
-      } else if (err.name === 'NotFoundError') {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        errMsg = 'カメラの使用が拒否されました。ブラウザのサイト設定でカメラを許可してください。';
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         errMsg = 'カメラデバイスが見つかりませんでした。';
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        errMsg = 'カメラが他のアプリで使用されているか、ハードウェアエラーが発生しました。';
       }
       this.onStatusChange({ status: 'error', message: errMsg, error: err });
       return false;
