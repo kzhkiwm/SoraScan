@@ -13,7 +13,7 @@ export const DEFAULT_CAMPAIGNS = [
     id: 'camp_18th_single',
     title: '日向坂46 18thシングル『イチャイチャ虫』',
     shortTitle: '18th「イチャイチャ虫」',
-    applyUrl: 'https://ticket.fortunemeets.app/hinatazaka46/18th',
+    applyUrl: 'https://ticket.fortunemeets.app/hinatazaka46/18th#/registration',
     period: '2026/09/30 10:00 〜 2026/11/30 23:59',
     createdAt: '2026-09-30T10:00:00.000Z'
   }
@@ -138,6 +138,27 @@ export const Storage = {
       return '';
     } catch (e) {
       return '';
+    }
+  },
+
+  /**
+   * シリアル登録画面へ直行するURLを取得
+   * forTUNE meets (ticket.fortunemeets.app) でハッシュ指定がない場合は自動で #/registration を付与
+   * @param {string} urlStr
+   * @returns {string}
+   */
+  getDirectRegistrationUrl(urlStr) {
+    const safe = this.sanitizeUrl(urlStr);
+    if (!safe) return '';
+    try {
+      const u = new URL(safe);
+      if (u.hostname.includes('fortunemeets.app') && (!u.hash || u.hash === '#/' || u.hash === '')) {
+        u.hash = '#/registration';
+        return u.href;
+      }
+      return safe;
+    } catch (e) {
+      return safe;
     }
   },
 

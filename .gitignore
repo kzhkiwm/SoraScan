@@ -1,0 +1,9 @@
+# Local test & scratch
+scratch/
+*.log
+.DS_Store
+Thumbs.db
+
+# User saved external HTML & assets (for privacy)
+*.htm
+*_files/

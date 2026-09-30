@@ -884,7 +884,7 @@ class SoraScanApp {
       if (btnVisit) {
         btnVisit.addEventListener('click', (e) => {
           e.stopPropagation();
-          const targetUrl = Storage.sanitizeUrl(item.applyUrl);
+          const targetUrl = Storage.getDirectRegistrationUrl(item.applyUrl);
           if (!targetUrl) {
             this.showToast('⚠️ 登録されている応募URLが無効または安全ではありません');
             return;
@@ -975,7 +975,7 @@ class SoraScanApp {
       if (this.selectedCampaignFilter && this.selectedCampaignFilter !== 'all') {
         targetCamp = campaigns.find(c => c.id === this.selectedCampaignFilter) || activeCamp;
       }
-      this.btnOpenLotterySite.href = targetCamp.applyUrl || 'https://ticket.fortunemeets.app/';
+      this.btnOpenLotterySite.href = Storage.getDirectRegistrationUrl(targetCamp.applyUrl) || 'https://ticket.fortunemeets.app/';
       if (this.btnOpenLotterySiteLabel) {
         this.btnOpenLotterySiteLabel.textContent = `${targetCamp.shortTitle || '公式'} 応募サイトを開く ↗`;
       }
@@ -1369,7 +1369,7 @@ class SoraScanApp {
     this.autoApplyUnusedCount.textContent = `${unusedList.length} 件`;
 
     // 本番リンクと模擬リンク
-    const safeUrl = Storage.sanitizeUrl(camp.applyUrl);
+    const safeUrl = Storage.getDirectRegistrationUrl(camp.applyUrl);
     if (this.btnOpenRealSiteFromModal) {
       this.btnOpenRealSiteFromModal.href = safeUrl || 'https://ticket.fortunemeets.app/';
     }
@@ -1458,7 +1458,7 @@ class SoraScanApp {
     this.advanceSequencerStep(0);
 
     // 応募サイトを開く
-    const targetUrl = Storage.sanitizeUrl(camp.applyUrl) || './mock-apply.html';
+    const targetUrl = Storage.getDirectRegistrationUrl(camp.applyUrl) || './mock-apply.html';
     window.open(targetUrl, '_blank', 'noopener,noreferrer');
   }
 
