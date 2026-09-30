@@ -275,13 +275,18 @@ export class ScannerEngine {
 
     const base64Data = dataUrl.split(',')[1];
 
-    const prompt = `日向坂46のCD封入スペシャル抽選応募シリアルナンバー（またはQRコード）が写っています。
-このシリアルナンバーは【英大文字と数字の連続する14文字（ハイフンなし）】です（例: "A8B3K9M2X4P7W1"）。
-画像内からこの14文字の英数字コードのみを正確に抽出してください。
-注意事項：
-- ハイフンやスペースは絶対に含めず、連続する14文字の英大文字・数字のみを出力してください。
-- 「0（数字のゼロ）」と「O（アルファベットのオー）」、「1（数字のイチ）」と「I（アルファベットのアイ）」を券面のフォント形状から厳密に見分けてください。
-- 余計な説明、前置き、引用符、Markdownは一切含めず、抽出した14文字のみ（例: A8B3K9M2X4P7W1）を出力してください。`;
+    const prompt = `日向坂46のCD封入スペシャル抽選応募シリアルナンバーの券面画像です。
+
+【重要：シリアルナンバーの位置とレイアウト】
+- 券面の下部に「四角い枠線（シリアルボックス）」があり、その枠線の左上に小さく「シリアルナンバー」と日本語で印刷されています。
+- その「シリアルナンバー」という文字の真下に、大きなフォントで横1行に印字されている【英大文字と数字の連続する14文字（ハイフンなし）】（例: "JR4KAR7KQ4B8TN"）が目的のシリアルコードです。
+- 枠線の右側にはQRコードがあります。
+
+【指示】
+- 「シリアルナンバー」の真下にある【14文字の英数字コード】のみを正確に抽出してください。
+- 「0（数字のゼロ）」と「O（アルファベットのオー）」、「1（数字のイチ）」と「I（アルファベットのアイ）」、「8（数字のハチ）」と「B（アルファベットのビー）」をフォント形状から厳密に見分けてください。
+- 上部の説明文やURL（"18th", "SRCL 13850~1", "TYPE-A", "fortunemeets"など）は絶対に無視してください。
+- 余計な説明、前置き、引用符、Markdownは一切含めず、抽出した14文字（例: JR4KAR7KQ4B8TN）のみを出力してください。`;
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
@@ -550,33 +555,62 @@ export class ScannerEngine {
       }
     }
 
-    // 2. ちょうど14文字の連続英数字 (日向坂46公式仕様 最優先)
+    // 2. 「シリアルナンバー」というキーワードの出現行を検出（アンカー特定）
+    let serialAnchorLineIndex = -1;
+    lines.forEach((line, idx) => {
+      const lower = line.toLowerCase();
+      if (lower.includes('シリアル') || lower.includes('ナンバー') || lower.includes('serial') || lower.includes('number')) {
+        serialAnchorLineIndex = idx;
+      }
+    });
+
+    // 説明文やURLに含まれる固定文字列（これらが含まれる場合はシリアルではない）
+    const blacklistWords = ['SRCL', '18TH', '17TH', '16TH', '15TH', '14TH', '13TH', '12TH', 'FORTUNE', 'MEETS', 'HTTP', 'TICKET', 'HINATAZAKA', 'TYPEA', 'TYPEB', 'TYPEC', 'TYPED', 'APP'];
+
+    const isBlacklisted = (str) => {
+      return blacklistWords.some(w => str.includes(w));
+    };
+
+    // 3. ちょうど14文字の連続英数字
     const pExact14 = /\b[A-Z0-9]{14}\b/g;
     const mExact14 = fullTextUpper.match(pExact14);
     if (mExact14) {
       mExact14.forEach(c => {
-        if (!candidates.some(cand => cand.code === c)) {
-          candidates.push({ code: c, raw: c, score: 100 });
+        if (!isBlacklisted(c) && !candidates.some(cand => cand.code === c)) {
+          // 数字と英字の両方を含んでいる場合は高スコア
+          const hasLetter = /[A-Z]/.test(c);
+          const hasDigit = /[0-9]/.test(c);
+          const score = (hasLetter && hasDigit) ? 100 : 85;
+          candidates.push({ code: c, raw: c, score });
         }
       });
     }
 
-    // 3. 行ごとに空白・記号を除去して「ちょうど14文字」になるもの
-    // 例: OCRが途中にスペースを誤認した場合 ("A8B3 2K9M 4P7W 1X")
-    lines.forEach(line => {
+    // 4. 行ごとに空白・記号を除去して「ちょうど14文字」になるもの
+    // 例: 実物のように文字間に字間がある場合 ("J R 4 K A R 7 K Q 4 B 8 T N")
+    lines.forEach((line, idx) => {
       const cleanLine = line.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (isBlacklisted(cleanLine)) return;
+
+      // 「シリアルナンバー」アンカー行の直後の行ならボーナス
+      const isRightAfterAnchor = (serialAnchorLineIndex !== -1 && (idx === serialAnchorLineIndex + 1 || idx === serialAnchorLineIndex));
+      const anchorBonus = isRightAfterAnchor ? 50 : 0;
+
       if (cleanLine.length === 14 && !candidates.some(c => c.code === cleanLine)) {
-        candidates.push({ code: cleanLine, raw: line.trim(), score: 98 });
+        const hasLetter = /[A-Z]/.test(cleanLine);
+        const hasDigit = /[0-9]/.test(cleanLine);
+        const baseScore = (hasLetter && hasDigit) ? 105 : 90;
+        candidates.push({ code: cleanLine, raw: line.trim(), score: baseScore + anchorBonus });
       } else if (cleanLine.length > 14) {
         // 15文字以上ある場合（前後にゴミが付着）、14文字の部分文字列を抽出
         for (let i = 0; i <= cleanLine.length - 14; i++) {
           const sub = cleanLine.substring(i, i + 14);
-          if (!candidates.some(c => c.code === sub)) {
-            candidates.push({ code: sub, raw: line.trim(), score: 88 - i * 2 });
+          if (!isBlacklisted(sub) && !candidates.some(c => c.code === sub)) {
+            candidates.push({ code: sub, raw: line.trim(), score: 85 - i * 2 + anchorBonus });
           }
         }
       } else if (cleanLine.length >= 12 && cleanLine.length <= 16 && !candidates.some(c => c.code === cleanLine)) {
-        candidates.push({ code: cleanLine, raw: line.trim(), score: 70 });
+        candidates.push({ code: cleanLine, raw: line.trim(), score: 65 + anchorBonus });
       }
     });
 

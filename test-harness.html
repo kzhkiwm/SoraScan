@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Harness</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+</head>
+<body style="background:#222; color:#fff; font-family:sans-serif; padding:20px;">
+  <h2>SoraScan Test Harness for Sample Ticket</h2>
+  <div id="output">Loading and analyzing sample-ticket.jpg...</div>
+  <div style="margin-top:20px;">
+    <canvas id="canvasPreview" style="max-width:100%; border:1px solid #555;"></canvas>
+  </div>
+
+  <script type="module">
+    import { ScannerEngine } from './js/scanner.js';
+
+    async function runTest() {
+      const out = document.getElementById('output');
+      const img = new Image();
+      img.src = './sample-ticket.jpg';
+      await new Promise(r => img.onload = r);
+
+      const scanner = new ScannerEngine();
+
+      // 1. QRコードのテスト
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const qrCode = jsQR(imgData.data, canvas.width, canvas.height);
+
+      let report = `<h3>Image loaded: ${img.naturalWidth} x ${img.naturalHeight}</h3>`;
+      if (qrCode) {
+        report += `<p style="color:#4ADE80; font-size:1.2rem;"><b>✅ QR Code Detected:</b> ${qrCode.data}</p>`;
+      } else {
+        report += `<p style="color:#F87171;">❌ QR Code not detected in full image</p>`;
+      }
+
+      // 2. OCRテスト
+      try {
+        out.innerHTML = report + '<p>Running OCR...</p>';
+        const res = await scanner.captureAndRecognize(img, { cropToGuide: false });
+        report += `<p><b>Best Serial Detected:</b> <span style="font-size:1.4rem; color:#60A5FA;">${res.bestSerial}</span></p>`;
+        report += `<pre style="background:#333; padding:10px;">Raw Text:\n${res.rawText}</pre>`;
+        report += `<p>Candidates: ${JSON.stringify(res.candidates, null, 2)}</p>`;
+      } catch (e) {
+        report += `<p style="color:red;">OCR Error: ${e.message}</p>`;
+      }
+
+      out.innerHTML = report;
+    }
+
+    runTest();
+  </script>
+</body>
+</html>
