@@ -16,14 +16,6 @@ export const DEFAULT_CAMPAIGNS = [
     applyUrl: 'https://ticket.fortunemeets.app/hinatazaka46/18th',
     period: '2026/09/30 10:00 〜 2026/11/30 23:59',
     createdAt: '2026-09-30T10:00:00.000Z'
-  },
-  {
-    id: 'camp_13th_single',
-    title: '日向坂46 13thシングル『卒業写真だけが知ってる』',
-    shortTitle: '13th「卒業写真だけが知ってる」',
-    applyUrl: 'https://ticket.fortunemusic.app/',
-    period: '',
-    createdAt: '2025-01-01T00:00:00.000Z'
   }
 ];
 
@@ -41,7 +33,7 @@ export const Storage = {
       let modified = false;
       const campaigns = this.getCampaigns();
       const defaultCamp = campaigns[0] || DEFAULT_CAMPAIGNS[0];
-      
+
       list = list.map(item => {
         if (!item.campaignId) {
           modified = true;
@@ -155,7 +147,7 @@ export const Storage = {
   addCampaign(data) {
     const campaigns = this.getCampaigns();
     const id = data.id || ('camp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6));
-    
+
     // 短縮タイトル生成
     let shortTitle = data.shortTitle;
     if (!shortTitle) {
@@ -415,7 +407,7 @@ export const Storage = {
   exportAsCSV(campaignId = null) {
     const list = this.getAll(campaignId);
     const headers = ['シリアルナンバー', 'ステータス', '形態・盤種', '対象作品', '応募サイトURL', '登録方式', '登録日時', '使用日時', 'メモ'];
-    
+
     const rows = list.map(item => [
       `"${this.formatSerialForDisplay(item.serial)}"`,
       `"${item.status === 'unused' ? '未応募' : '応募済'}"`,
@@ -476,11 +468,11 @@ export const Storage = {
       } else {
         throw new Error('データ形式が無効です');
       }
-      
+
       const currentList = this.getAll();
       const existingSerials = new Set(currentList.map(item => this.normalizeSerial(item.serial)));
       const activeCamp = this.getActiveCampaign();
-      
+
       let imported = 0;
       let skipped = 0;
 
