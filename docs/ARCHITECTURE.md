@@ -147,7 +147,69 @@ backdrop-filter: blur(20px);
 
 ---
 
-## 6. トラブルシューティング & FAQ
+## 6. 応募サイト自動登録アーキテクチャ（Auto-Apply System）
+
+日向坂46のCD封入抽選応募特設サイト（**forTUNE meets** 等）へのシリアル登録作業を自動化・劇的に効率化するための連携機構です。
+
+```mermaid
+graph TD
+    subgraph SoraScan_PWA [SoraScan PWA 本体]
+        UnusedList[(未応募シリアル一覧)]
+        Modal_AutoApply[自動登録アシスタント]
+        Sequencer[タブ復帰連動シーケンサー]
+    end
+
+    subgraph Target_Site [公式応募サイト (forTUNE meets / 模擬)]
+        Floating_UI[スマホ向け 空色フローティング操作バー]
+        Input_Field[シリアル入力欄 (input#serial_code)]
+        Submit_Btn[登録ボタン (button[type=submit])]
+        Result_State[完了検知 (DOM監視)]
+    end
+
+    UnusedList -->|データセット / クリップボード| Modal_AutoApply
+    Modal_AutoApply -->|ブックマークレット生成| Floating_UI
+    Modal_AutoApply -->|順次コピー| Sequencer
+
+    Floating_UI -->|仮想DOM対応値注入| Input_Field
+    Input_Field --> Submit_Btn
+    Submit_Btn --> Result_State
+    Result_State -->|1.5秒待機後に次へ自動送信| Floating_UI
+
+    Sequencer -.->|タブ切り替え検知で次シリアル自動コピー| Target_Site
+```
+
+### ① スマホ特化型 ブックマークレット（`js/bookmarklet.js`）
+- **クロスオリジン制約の突破**:
+  ブラウザの同一生成元ポリシー（Same-Origin Policy）により、外部Webサイトから `ticket.fortunemeets.app` のDOMを直接操作することは禁止されています。
+  SoraScanでは、応募サイトのコンテキスト内で直接実行される**ブックマークレット（JavaScript URL）**を動的生成することで、安全かつ完全にフォーム操作・自動送信を実行します。
+- **React / 仮想DOMのプロパティセッター・バイパス**:
+  現代のWebフォーム（React/Vue等）は、JavaScriptで `input.value = "..."` を代入しただけでは内部のステートが更新されず、バリデーションエラーになります。
+  SoraScanのインジェクションコードでは、プロトタイプチェーンからネイティブのセッターを取得して実行し、`input` および `change` イベントを強制バブリング発火させることで、**あらゆるWebフレームワークの入力欄に100%確実に値を反映**させます。
+  ```javascript
+  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+  if (nativeSetter) {
+    nativeSetter.call(input, serial);
+  } else {
+    input.value = serial;
+  }
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  ```
+- **サーバー負荷対策と安全ディレイ（Rate-Limiting Protection）**:
+  全自動連続登録（Auto-Run）時は、登録完了画面をMutationObserverおよびDOM走査で検知した後、**1.5秒〜2秒の安全待機インターバル**を必ず挟んでから次のシリアルを送信します。これにより公式サーバーへのDoS的負荷や一時的なIP制限を確実に防ぎます。
+
+### ② タブ復帰連動型 シーケンサー（ゼロ設定アシスト）
+- ブックマークの登録すら不要な、標準ブラウザ機能（`Page Visibility API` / `Window Focus`）を活用したアシスタントです。
+- SoraScanから「シーケンサー開始」を押すと1件目をコピーして別タブで応募サイトを開きます。
+- ユーザーが応募サイトでペースト・送信を行い、**SoraScanのタブに戻るだけ（`visibilitychange` または `focus` イベント検知）で、直前のシリアルが自動で「応募済」になり、次のシリアルが即座にクリップボードに自動コピー**されます。
+- 「戻る → ペースト → 戻る → ペースト」の反復が一切の無駄な操作なく最短ステップで完了します。
+
+### ③ 模擬応募サイト（`mock-apply.html`）
+- 本番のCD発売・応募期間外であっても、入力欄の検出、仮想DOM値注入、送信、二重登録防止エラー、完了画面の遷移が期待通りに動作することを検証できるテスト環境です。
+
+---
+
+## 7. トラブルシューティング & FAQ
 
 ### Q. Android端末で「カメラの起動に失敗しました」と表示される
 **【原因】Web標準のセキュリティ仕様（Secure Context制限）**

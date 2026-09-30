@@ -6,6 +6,7 @@
 import { Storage } from './storage.js';
 import { ScannerEngine } from './scanner.js';
 import { TicketSimulator } from './simulator.js';
+import { BookmarkletEngine } from './bookmarklet.js';
 
 class SoraScanApp {
   constructor() {
@@ -20,9 +21,20 @@ class SoraScanApp {
     // 現在のモーダル編集対象
     this.pendingRecord = null;
 
+    // シーケンサー状態
+    this.sequencer = {
+      active: false,
+      campaignId: null,
+      queue: [],
+      currentIndex: 0,
+      currentRecord: null,
+      waitingFocusReturn: false
+    };
+
     this.initElements();
     this.initScanner();
     this.initEventListeners();
+    this.initAutoApply();
     this.initPWA();
     this.loadInitialData();
   }
@@ -67,6 +79,7 @@ class SoraScanApp {
     this.searchInput = document.getElementById('searchInput');
     this.filterPills = document.querySelectorAll('.filter-pills .pill-btn');
     this.selectFilterCampaign = document.getElementById('selectFilterCampaign');
+    this.btnOpenAutoApplyModal = document.getElementById('btnOpenAutoApplyModal');
     this.btnCopyUnused = document.getElementById('btnCopyUnused');
     this.btnExportCSV = document.getElementById('btnExportCSV');
     this.btnOpenLotterySite = document.getElementById('btnOpenLotterySite');
@@ -116,6 +129,34 @@ class SoraScanApp {
     this.fileBackupImport = document.getElementById('fileBackupImport');
     this.btnClearAllSerials = document.getElementById('btnClearAllSerials');
     this.inputGeminiApiKey = document.getElementById('inputGeminiApiKey');
+
+    // 応募サイト自動登録モーダル
+    this.modalAutoApply = document.getElementById('modalAutoApply');
+    this.btnCloseAutoApplyModal = document.getElementById('btnCloseAutoApplyModal');
+    this.selectAutoApplyCampaign = document.getElementById('selectAutoApplyCampaign');
+    this.autoApplyUnusedCount = document.getElementById('autoApplyUnusedCount');
+    this.tabBtnBookmarklet = document.getElementById('tabBtnBookmarklet');
+    this.tabBtnSequencer = document.getElementById('tabBtnSequencer');
+    this.panelBookmarklet = document.getElementById('panelBookmarklet');
+    this.panelSequencer = document.getElementById('panelSequencer');
+    this.btnCopyBookmarklet = document.getElementById('btnCopyBookmarklet');
+    this.btnOpenMockSite = document.getElementById('btnOpenMockSite');
+    this.btnOpenRealSiteFromModal = document.getElementById('btnOpenRealSiteFromModal');
+    this.textAppliedSerialsSync = document.getElementById('textAppliedSerialsSync');
+    this.btnSyncFromClipboard = document.getElementById('btnSyncFromClipboard');
+    this.btnApplySyncSerials = document.getElementById('btnApplySyncSerials');
+
+    // シーケンサーUI要素
+    this.sequencerStatusCard = document.getElementById('sequencerStatusCard');
+    this.seqPulseDot = document.getElementById('seqPulseDot');
+    this.seqStatusLabel = document.getElementById('seqStatusLabel');
+    this.seqCurrentCodeDisplay = document.getElementById('seqCurrentCodeDisplay');
+    this.seqProgressFill = document.getElementById('seqProgressFill');
+    this.seqMetaInfo = document.getElementById('seqMetaInfo');
+    this.btnStartSequencer = document.getElementById('btnStartSequencer');
+    this.seqActiveControls = document.getElementById('seqActiveControls');
+    this.btnSeqSkipCurrent = document.getElementById('btnSeqSkipCurrent');
+    this.btnStopSequencer = document.getElementById('btnStopSequencer');
 
     // トースト
     this.toastContainer = document.getElementById('toastContainer');
@@ -1204,6 +1245,308 @@ class SoraScanApp {
 
   closeSettingsModal() {
     this.modalSettings.classList.remove('open');
+  }
+
+  /**
+   * 応募サイト自動登録機能の初期化
+   */
+  initAutoApply() {
+    if (this.btnOpenAutoApplyModal) {
+      this.btnOpenAutoApplyModal.addEventListener('click', () => this.openAutoApplyModal());
+    }
+    if (this.btnCloseAutoApplyModal) {
+      this.btnCloseAutoApplyModal.addEventListener('click', () => this.closeAutoApplyModal());
+    }
+    if (this.modalAutoApply) {
+      this.modalAutoApply.addEventListener('click', (e) => {
+        if (e.target === this.modalAutoApply) this.closeAutoApplyModal();
+      });
+    }
+
+    // 作品切り替え
+    if (this.selectAutoApplyCampaign) {
+      this.selectAutoApplyCampaign.addEventListener('change', () => this.updateAutoApplyView());
+    }
+
+    // タブ切り替え
+    if (this.tabBtnBookmarklet && this.tabBtnSequencer) {
+      this.tabBtnBookmarklet.addEventListener('click', () => {
+        this.tabBtnBookmarklet.classList.add('active');
+        this.tabBtnSequencer.classList.remove('active');
+        this.panelBookmarklet.style.display = 'flex';
+        this.panelSequencer.style.display = 'none';
+      });
+
+      this.tabBtnSequencer.addEventListener('click', () => {
+        this.tabBtnSequencer.classList.add('active');
+        this.tabBtnBookmarklet.classList.remove('active');
+        this.panelSequencer.style.display = 'flex';
+        this.panelBookmarklet.style.display = 'none';
+      });
+    }
+
+    // ブックマークレットコードコピー
+    if (this.btnCopyBookmarklet) {
+      this.btnCopyBookmarklet.addEventListener('click', () => this.copyBookmarkletCode());
+    }
+
+    // クリップボードから貼付
+    if (this.btnSyncFromClipboard) {
+      this.btnSyncFromClipboard.addEventListener('click', async () => {
+        try {
+          const text = await navigator.clipboard.readText();
+          if (text) {
+            this.textAppliedSerialsSync.value = text;
+            this.showToast('📋 クリップボードからシリアルを貼り付けました');
+          } else {
+            this.showToast('クリップボードが空です');
+          }
+        } catch (e) {
+          this.showToast('⚠️ クリップボードの読み取りが許可されていません。手動で貼り付けてください');
+        }
+      });
+    }
+
+    // 貼り付けシリアルの反映
+    if (this.btnApplySyncSerials) {
+      this.btnApplySyncSerials.addEventListener('click', () => this.applySyncSerials());
+    }
+
+    // シーケンサー操作
+    if (this.btnStartSequencer) {
+      this.btnStartSequencer.addEventListener('click', () => this.startSequencer());
+    }
+    if (this.btnSeqSkipCurrent) {
+      this.btnSeqSkipCurrent.addEventListener('click', () => this.skipSequencerStep());
+    }
+    if (this.btnStopSequencer) {
+      this.btnStopSequencer.addEventListener('click', () => this.stopSequencer());
+    }
+
+    // タブ復帰検知（シーケンサー動作中）
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.sequencer.active && this.sequencer.waitingFocusReturn) {
+        this.handleSequencerFocusReturn();
+      }
+    });
+    window.addEventListener('focus', () => {
+      if (this.sequencer.active && this.sequencer.waitingFocusReturn) {
+        this.handleSequencerFocusReturn();
+      }
+    });
+  }
+
+  /**
+   * 自動登録モーダルを開く
+   */
+  openAutoApplyModal(targetCampaignId = null) {
+    const campaigns = Storage.getCampaigns();
+    const activeCampId = targetCampaignId || Storage.getActiveCampaignId();
+
+    this.selectAutoApplyCampaign.innerHTML = campaigns.map(c => `
+      <option value="${c.id}" ${c.id === activeCampId ? 'selected' : ''}>
+        ${this.escapeHtml(c.shortTitle || c.title)}
+      </option>
+    `).join('');
+
+    this.updateAutoApplyView();
+    this.modalAutoApply.classList.add('open');
+  }
+
+  closeAutoApplyModal() {
+    this.modalAutoApply.classList.remove('open');
+  }
+
+  /**
+   * 選択中作品に応じた未応募件数・URLの更新
+   */
+  updateAutoApplyView() {
+    const campId = this.selectAutoApplyCampaign.value;
+    const campaigns = Storage.getCampaigns();
+    const camp = campaigns.find(c => c.id === campId) || Storage.getActiveCampaign();
+    const unusedList = Storage.getUnused(campId);
+
+    this.autoApplyUnusedCount.textContent = `${unusedList.length} 件`;
+
+    // 本番リンクと模擬リンク
+    const safeUrl = Storage.sanitizeUrl(camp.applyUrl);
+    if (this.btnOpenRealSiteFromModal) {
+      this.btnOpenRealSiteFromModal.href = safeUrl || 'https://ticket.fortunemeets.app/';
+    }
+
+    // シーケンサーカードの表示更新（非稼働時）
+    if (!this.sequencer.active) {
+      this.seqStatusLabel.textContent = `待機中 (${unusedList.length}件 未応募)`;
+      this.seqCurrentCodeDisplay.textContent = unusedList.length > 0 ? '準備完了' : '未応募シリアルなし';
+      this.seqProgressFill.style.width = '0%';
+      this.seqMetaInfo.textContent = unusedList.length > 0 ? '「シーケンサーを開始」ボタンを押してください' : 'この作品には未応募シリアルがありません';
+      this.btnStartSequencer.disabled = unusedList.length === 0;
+      this.seqActiveControls.style.display = 'none';
+      this.btnStartSequencer.style.display = 'block';
+    }
+  }
+
+  /**
+   * ブックマークレットコードの生成とコピー
+   */
+  copyBookmarkletCode() {
+    const campId = this.selectAutoApplyCampaign.value;
+    const campaigns = Storage.getCampaigns();
+    const camp = campaigns.find(c => c.id === campId) || Storage.getActiveCampaign();
+    const unusedList = Storage.getUnused(campId);
+
+    if (unusedList.length === 0) {
+      this.showToast(`⚠️ 「${camp.shortTitle || camp.title}」には未応募のシリアルがありません`);
+      return;
+    }
+
+    const code = BookmarkletEngine.generateCode(unusedList, camp);
+    navigator.clipboard.writeText(code).then(() => {
+      this.showToast(`⚡ 未応募${unusedList.length}件を含むブックマークレットをコピーしました！`);
+    }).catch(() => {
+      prompt('以下のブックマークレットコードをコピーしてください:', code);
+    });
+  }
+
+  /**
+   * 登録完了シリアルの手動反映
+   */
+  applySyncSerials() {
+    const text = this.textAppliedSerialsSync.value.trim();
+    if (!text) {
+      this.showToast('シリアルコードが入力されていません');
+      return;
+    }
+
+    const extracted = text.match(/[A-Za-z0-9]{14}/g);
+    if (!extracted || extracted.length === 0) {
+      this.showToast('⚠️ 14桁のシリアルナンバーが見つかりませんでした');
+      return;
+    }
+
+    const updatedCount = Storage.markSerialsAsUsedByCode(extracted);
+    this.showToast(`🎉 ${updatedCount} 件のシリアルを「応募済」に更新しました！`);
+    this.textAppliedSerialsSync.value = '';
+    this.updateAutoApplyView();
+    this.renderList();
+  }
+
+  /**
+   * 連続応募シーケンサーの開始
+   */
+  startSequencer() {
+    const campId = this.selectAutoApplyCampaign.value;
+    const campaigns = Storage.getCampaigns();
+    const camp = campaigns.find(c => c.id === campId) || Storage.getActiveCampaign();
+    const unusedList = Storage.getUnused(campId);
+
+    if (unusedList.length === 0) {
+      this.showToast('⚠️ 未応募のシリアルがありません');
+      return;
+    }
+
+    this.sequencer.active = true;
+    this.sequencer.campaignId = campId;
+    this.sequencer.queue = unusedList;
+    this.sequencer.currentIndex = 0;
+    this.sequencer.total = unusedList.length;
+
+    this.btnStartSequencer.style.display = 'none';
+    this.seqActiveControls.style.display = 'grid';
+
+    // 1件目をセット
+    this.advanceSequencerStep(0);
+
+    // 応募サイトを開く
+    const targetUrl = Storage.sanitizeUrl(camp.applyUrl) || './mock-apply.html';
+    window.open(targetUrl, '_blank', 'noopener,noreferrer');
+  }
+
+  /**
+   * シーケンサーのステップ進行
+   */
+  advanceSequencerStep(index) {
+    if (index >= this.sequencer.queue.length) {
+      this.completeSequencer();
+      return;
+    }
+
+    const targetRecord = this.sequencer.queue[index];
+    this.sequencer.currentIndex = index;
+    this.sequencer.currentRecord = targetRecord;
+    this.sequencer.waitingFocusReturn = true;
+
+    // クリップボードへコピー
+    navigator.clipboard.writeText(targetRecord.serial).catch(() => {});
+
+    // UI更新
+    this.seqStatusLabel.textContent = `🚀 応募中 (${index + 1} / ${this.sequencer.total} 件目)`;
+    this.seqCurrentCodeDisplay.textContent = Storage.formatSerialForDisplay(targetRecord.serial);
+    const progressPercent = Math.round((index / this.sequencer.total) * 100);
+    this.seqProgressFill.style.width = `${progressPercent}%`;
+    this.seqMetaInfo.innerHTML = `📋 <b>${targetRecord.serial}</b> をコピーしました。<br>応募サイトで登録後、<b>この画面に戻ると自動で次へ進みます</b>。`;
+
+    this.showToast(`📋 ${index + 1}件目 (${targetRecord.serial}) をコピーしました`);
+  }
+
+  /**
+   * SoraScanタブ復帰時のハンドラ
+   */
+  handleSequencerFocusReturn() {
+    if (!this.sequencer.active || !this.sequencer.waitingFocusReturn) return;
+    this.sequencer.waitingFocusReturn = false;
+
+    // 前のシリアルを「応募済」に更新
+    const prevRecord = this.sequencer.currentRecord;
+    if (prevRecord) {
+      Storage.update(prevRecord.id, { status: 'used' });
+      this.renderList();
+    }
+
+    const nextIdx = this.sequencer.currentIndex + 1;
+    if (nextIdx < this.sequencer.total) {
+      // わずかなディレイ後に次のシリアルをコピーして進行
+      setTimeout(() => {
+        this.advanceSequencerStep(nextIdx);
+        this.showToast(`✅ 前のシリアルを応募済みに更新！次のシリアルをコピーしました`);
+      }, 500);
+    } else {
+      this.completeSequencer();
+    }
+  }
+
+  skipSequencerStep() {
+    if (!this.sequencer.active) return;
+    const nextIdx = this.sequencer.currentIndex + 1;
+    if (nextIdx < this.sequencer.total) {
+      this.advanceSequencerStep(nextIdx);
+      this.showToast('今のシリアルをスキップしました');
+    } else {
+      this.completeSequencer();
+    }
+  }
+
+  stopSequencer() {
+    this.sequencer.active = false;
+    this.sequencer.waitingFocusReturn = false;
+    this.btnStartSequencer.style.display = 'block';
+    this.seqActiveControls.style.display = 'none';
+    this.updateAutoApplyView();
+    this.showToast('⏹ シーケンサーを終了しました');
+  }
+
+  completeSequencer() {
+    this.sequencer.active = false;
+    this.sequencer.waitingFocusReturn = false;
+    this.seqProgressFill.style.width = '100%';
+    this.seqStatusLabel.textContent = '🎉 全件完了！';
+    this.seqCurrentCodeDisplay.textContent = '完了';
+    this.seqMetaInfo.textContent = `すべてのシリアル（${this.sequencer.total}件）を処理しました！`;
+    this.btnStartSequencer.style.display = 'block';
+    this.seqActiveControls.style.display = 'none';
+    this.updateAutoApplyView();
+    this.renderList();
+    this.showToast(`🎉 全${this.sequencer.total}件のシリアル応募フローが完了しました！`);
   }
 
   /**

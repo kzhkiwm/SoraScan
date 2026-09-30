@@ -358,6 +358,60 @@ export const Storage = {
   },
 
   /**
+   * 指定作品（または全体）の未応募シリアル一覧を取得（登録古い順）
+   * @param {string} [campaignId] - 作品ID
+   * @returns {Array} 未応募シリアルの配列
+   */
+  getUnused(campaignId = null) {
+    const list = this.getAll(campaignId);
+    return list.filter(item => item.status === 'unused').reverse();
+  },
+
+  /**
+   * シリアルコード文字列のリストを受け取り、一致する未応募レコードを一括で応募済みに更新
+   * @param {string[]} serialCodes - 応募完了したシリアルコード文字列の配列
+   * @returns {number} 更新された件数
+   */
+  markSerialsAsUsedByCode(serialCodes = []) {
+    if (!Array.isArray(serialCodes) || serialCodes.length === 0) return 0;
+    const cleanCodes = new Set(serialCodes.map(s => this.normalizeSerial(s)));
+    const list = this.getAll();
+    const now = new Date().toISOString();
+    let updatedCount = 0;
+
+    const newList = list.map(item => {
+      const clean = this.normalizeSerial(item.serial);
+      if (cleanCodes.has(clean) && item.status !== 'used') {
+        updatedCount++;
+        return {
+          ...item,
+          status: 'used',
+          usedAt: now
+        };
+      }
+      return item;
+    });
+
+    if (updatedCount > 0) {
+      this._saveAll(newList);
+    }
+    return updatedCount;
+  },
+
+  /**
+   * シーケンサー用: 次の未応募シリアルを1件取得し、ステータスを'used'に更新して返す
+   * @param {string} [campaignId] - 作品ID
+   * @returns {Object|null} 消費されたシリアルオブジェクト、無ければnull
+   */
+  consumeNextUnused(campaignId = null) {
+    const unusedList = this.getUnused(campaignId);
+    if (unusedList.length === 0) return null;
+    const target = unusedList[0];
+    const updated = this.update(target.id, { status: 'used' });
+    return updated;
+  },
+
+  /**
    * 統計情報の集計
    * @param {string} [campaignId] - 特定の作品で絞り込む場合
    */

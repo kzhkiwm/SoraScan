@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>forTUNE meets 模擬シリアル登録ページ (テスト検証用) | SoraScan</title>
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: rgba(124, 199, 232, 0.25);
+      --primary: #7cc7e8;
+      --primary-hover: #5bb3dc;
+      --accent: #ffce54;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --success: #10b981;
+      --error: #ef4444;
+      --radius: 12px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background: linear-gradient(135deg, #0b132b 0%, #1c2541 50%, #0b132b 100%);
+      color: var(--text);
+      font-family: 'Zen Kaku Gothic New', -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+    }
+
+    .top-banner {
+      width: 100%;
+      max-width: 600px;
+      background: rgba(234, 179, 8, 0.15);
+      border: 1px solid rgba(234, 179, 8, 0.4);
+      color: #fef08a;
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .mock-container {
+      width: 100%;
+      max-width: 600px;
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    .site-header {
+      background: linear-gradient(90deg, #1e3a8a 0%, #0284c7 100%);
+      padding: 18px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo-badge {
+      background: #ffffff;
+      color: #0284c7;
+      font-weight: 900;
+      font-size: 0.75rem;
+      padding: 3px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .site-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.5px;
+    }
+
+    .user-pill {
+      font-size: 0.75rem;
+      background: rgba(255, 255, 255, 0.2);
+      padding: 4px 10px;
+      border-radius: 20px;
+      color: #ffffff;
+    }
+
+    .event-info {
+      padding: 20px 20px 12px;
+      border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
+    }
+
+    .event-tag {
+      display: inline-block;
+      background: rgba(124, 199, 232, 0.2);
+      color: var(--primary);
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+    }
+
+    .event-name {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 6px;
+      line-height: 1.4;
+    }
+
+    .event-desc {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .form-wrapper {
+      padding: 24px 20px;
+    }
+
+    .form-section-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .input-group {
+      margin-bottom: 16px;
+    }
+
+    .input-label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .serial-input {
+      width: 100%;
+      height: 52px;
+      background: #0f172a;
+      border: 2px solid rgba(124, 199, 232, 0.3);
+      border-radius: 10px;
+      color: #ffffff;
+      font-family: 'Outfit', monospace;
+      font-size: 1.25rem;
+      font-weight: 700;
+      text-align: center;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      transition: all 0.2s ease;
+      outline: none;
+    }
+
+    .serial-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(124, 199, 232, 0.25);
+    }
+
+    .input-hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    .btn-submit {
+      width: 100%;
+      height: 52px;
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      color: #ffffff;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
+    }
+
+    .btn-submit:hover:not(:disabled) {
+      background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+      transform: translateY(-1px);
+    }
+
+    .btn-submit:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    .btn-submit:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Result State Box */
+    .result-box {
+      margin-top: 20px;
+      padding: 16px;
+      border-radius: 10px;
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .result-box.success {
+      display: block;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #a7f3d0;
+    }
+
+    .result-box.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+
+    .result-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .result-msg {
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+
+    /* Registered Serials List on this Mock */
+    .history-card {
+      width: 100%;
+      max-width: 600px;
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .history-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .history-count {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .history-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .history-item {
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 8px 12px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.82rem;
+    }
+
+    .history-code {
+      font-family: 'Outfit', monospace;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 1px;
+    }
+
+    .history-time {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    .btn-clear-history {
+      background: none;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      font-size: 0.72rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .btn-clear-history:hover {
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .nav-back {
+      margin-top: 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Announcement -->
+  <div class="top-banner">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    <div>
+      <b>SoraScan 模擬応募テストサイト</b><br>
+      forTUNE meets の実際のシリアルコード登録画面（DOM構造・バリデーション・完了通知）をシミュレートしています。ブックマークレットや自動登録アシスタントの動作検証にご利用ください。
+    </div>
+  </div>
+
+  <!-- Mock forTUNE meets Card -->
+  <div class="mock-container">
+    <header class="site-header">
+      <div class="logo-area">
+        <span class="logo-badge">MOCK</span>
+        <span class="site-title">forTUNE meets</span>
+      </div>
+      <div class="user-pill">
+        👤 おひさま 太郎 様 (ログイン中)
+      </div>
+    </header>
+
+    <div class="event-info">
+      <span class="event-tag">スペシャル抽選応募</span>
+      <h1 class="event-name" id="mockEventTitle">日向坂46 18thシングル『イチャイチャ虫』発売記念 スペシャル抽選</h1>
+      <p class="event-desc">CD封入の抽選応募券に印字されている半角英数14桁のシリアルナンバーを入力し、「シリアルナンバーを登録する」ボタンを押してください。</p>
+    </div>
+
+    <div class="form-wrapper">
+      <form id="serialApplyForm" onsubmit="handleMockSubmit(event);">
+        <div class="form-section-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+            <line x1="7" y1="8" x2="17" y2="8"></line>
+            <line x1="7" y1="12" x2="17" y2="12"></line>
+            <line x1="7" y1="16" x2="13" y2="16"></line>
+          </svg>
+          シリアルナンバーの入力
+        </div>
+
+        <div class="input-group">
+          <label class="input-label" for="serial_code">シリアルコード（半角英数字14文字）</label>
+          <!-- forTUNE meets 等で使われる代表的なセレクタ属性を備えたinput -->
+          <input 
+            type="text" 
+            id="serial_code" 
+            name="serial_code" 
+            class="serial-input"
+            placeholder="例: A1B2C3D4E5F6G7" 
+            maxlength="18" 
+            autocomplete="off" 
+            autocapitalize="characters"
+            spellcheck="false"
+            required
+          >
+          <div class="input-hint">※ハイフン（-）は含めずに入力してください。大文字・小文字は自動で正規化されます。</div>
+        </div>
+
+        <button type="submit" id="btnSubmitSerial" class="btn-submit">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          シリアルナンバーを登録する
+        </button>
+      </form>
+
+      <!-- Feedback / Result alert -->
+      <div id="resultBox" class="result-box">
+        <div class="result-title" id="resultTitle"></div>
+        <div class="result-msg" id="resultMsg"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Local Registered History on this Mock Site -->
+  <div class="history-card">
+    <div class="history-header">
+      <div class="history-title">本ページで登録されたシリアル履歴</div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="history-count" id="historyCount">0 件</span>
+        <button type="button" class="btn-clear-history" onclick="clearMockHistory();">クリア</button>
+      </div>
+    </div>
+    <ul class="history-list" id="mockHistoryList">
+      <li style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding:12px;">まだ登録されたシリアルはありません</li>
+    </ul>
+  </div>
+
+  <a href="./index.html" class="nav-back">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <line x1="19" y1="12" x2="5" y2="12"></line>
+      <polyline points="12 19 5 12 12 5"></polyline>
+    </svg>
+    SoraScan アプリ本体に戻る
+  </a>
+
+  <script>
+    const STORAGE_KEY = 'sorascan_mock_applied_serials_v1';
+
+    function getHistory() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveHistory(list) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      renderHistory();
+    }
+
+    function clearMockHistory() {
+      if (confirm('登録履歴をクリアしますか？')) {
+        localStorage.removeItem(STORAGE_KEY);
+        renderHistory();
+        hideResult();
+      }
+    }
+
+    function renderHistory() {
+      const list = getHistory();
+      const listEl = document.getElementById('mockHistoryList');
+      const countEl = document.getElementById('historyCount');
+      countEl.textContent = `${list.length} 件`;
+
+      if (list.length === 0) {
+        listEl.innerHTML = '<li style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding:12px;">まだ登録されたシリアルはありません</li>';
+        return;
+      }
+
+      listEl.innerHTML = list.map(item => `
+        <li class="history-item">
+          <div>
+            <span class="history-code">${escapeHtml(item.serial)}</span>
+          </div>
+          <span class="history-time">${new Date(item.registeredAt).toLocaleTimeString('ja-JP')}</span>
+        </li>
+      `).reverse().join('');
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+    }
+
+    function showResult(isSuccess, title, msg) {
+      const box = document.getElementById('resultBox');
+      const titleEl = document.getElementById('resultTitle');
+      const msgEl = document.getElementById('resultMsg');
+
+      box.className = `result-box ${isSuccess ? 'success' : 'error'}`;
+      titleEl.innerHTML = isSuccess 
+        ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> ${title}`
+        : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> ${title}`;
+      msgEl.innerHTML = msg;
+
+      // 画面更新シグナル（MutationObserver または完了要素の検知用）
+      box.setAttribute('data-status', isSuccess ? 'completed' : 'error');
+    }
+
+    function hideResult() {
+      const box = document.getElementById('resultBox');
+      box.className = 'result-box';
+      box.removeAttribute('data-status');
+    }
+
+    function handleMockSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById('serial_code');
+      const btn = document.getElementById('btnSubmitSerial');
+      const rawVal = input.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+      if (!rawVal) {
+        showResult(false, '入力エラー', 'シリアルナンバーを入力してください。');
+        return;
+      }
+
+      if (rawVal.length !== 14) {
+        showResult(false, '桁数エラー', `シリアルナンバーは14桁です（現在: ${rawVal.length}桁）。`);
+        return;
+      }
+
+      // 送信シミュレーション（ボタン無効化 & 擬似通信待機 400ms）
+      btn.disabled = true;
+      btn.innerHTML = '登録中...';
+
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = `
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          シリアルナンバーを登録する
+        `;
+
+        const history = getHistory();
+        const isDuplicated = history.some(item => item.serial === rawVal);
+
+        if (isDuplicated) {
+          showResult(false, '二重登録エラー', `シリアルナンバー <b>${rawVal}</b> は既に使用・登録済みです。`);
+          return;
+        }
+
+        // 成功処理
+        history.push({
+          serial: rawVal,
+          registeredAt: new Date().toISOString()
+        });
+        saveHistory(history);
+
+        showResult(true, '登録完了！', `シリアルナンバー <b>${rawVal}</b> の登録が正常に完了しました。<br><span style="font-size:0.75rem; color:#6ee7b7;">※アカウントの保有シリアルに反映されました。</span>`);
+        
+        // 入力欄をクリア
+        input.value = '';
+      }, 400);
+    }
+
+    // 初期化
+    document.addEventListener('DOMContentLoaded', () => {
+      renderHistory();
+
+      // URLパラメータからシリアル初期値があればセット
+      const params = new URLSearchParams(window.location.search);
+      const urlSerial = params.get('serial') || params.get('code');
+      if (urlSerial) {
+        const clean = urlSerial.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const input = document.getElementById('serial_code');
+        input.value = clean;
+      }
+    });
+  </script>
+</body>
+</html>
