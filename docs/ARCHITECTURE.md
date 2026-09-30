@@ -87,19 +87,47 @@ const sHeight = Math.min(naturalH - sy, oRect.height * scaleY);
 3. **行内スペース除去後 14文字**: 単語間にスペースが入ってしまった場合（例: `A8B3 2K9M 4P7W 1X`）を連結（スコア 98）
 4. **15文字以上からの14文字部分抽出**: 前後の記号ゴミを削ぎ落としてスライディング抽出（スコア 88〜92）
 
+### ⑤ アルバム共通サフィックス（末尾2文字）を活用したハイブリッド誤認識防止・自動補正機構
+日向坂46（および坂道シリーズ）の封入シリアルナンバーは、**同一シングル・アルバム（作品）であれば末尾2文字がすべて同一の固定文字列（サフィックス）**になっています（例: 18th『イチャイチャ虫』はすべて `TN`）。
+SoraScanではこの事前知識（Prior Knowledge）を最大限に活用し、以下の三重防御パイプラインで認識精度を劇的に向上させています：
+
+1. **スコアリングボーナス（+35点）**:
+   抽出候補の中で末尾2文字が作品の固定サフィックスと一致するものを最優先にランク付け。
+2. **OCR混同文字テーブルによる末尾自動誤読補正（Suffix Error Correction）**:
+   文字のかすれやフォント形状により `N` が `M` や `H`、`T` が `1` や `I` や `7` などに誤読された場合、末尾を作品の固定サフィックスに置換した補正候補を自動生成して優先採用。
+3. **アライメント境界救済**:
+   前後のノイズで15文字等に膨らんだ場合も、行内に含まれるサフィックス位置をアンカーとして正規の14文字を精緻に切り出し。
+4. **Gemini Vision AIへのプロンプト注入**:
+   マルチモーダルAI解析時にも「末尾2文字の確定ルール」を指示し、精度を100%に近づけます。
+5. **スマート自動学習（Auto-Inference）**:
+   作品設定で未入力の場合でも、登録されたシリアルコードの末尾から作品サフィックスを自動推定・記憶。
+
 ---
 
 ## 3. データモデル（スキーマ設計）
 
-ローカルストレージ（キー: `sorascan_serials_v1`）に保存されるレコードの仕様です。
+ローカルストレージ（キー: `sorascan_serials_v1` および `sorascan_campaigns_v1`）に保存されるレコードの仕様です。
 
 ```typescript
+interface CampaignRecord {
+  id: string;              // 固有ID (例: "camp_18th_single")
+  title: string;           // 作品名 (例: "日向坂46 18thシングル『イチャイチャ虫』")
+  shortTitle: string;      // 短縮通称 (例: "18th「イチャイチャ虫」")
+  serialSuffix: string;    // アルバム共通のシリアル末尾2文字 (例: "TN")
+  applyUrl: string;        // 公式応募サイトURL
+  period: string;          // 応募期間
+  createdAt: string;       // ISO 8601
+}
+
 interface SerialRecord {
   id: string;              // 固有ID (例: "sn_1727678400000_x9a2b")
-  serial: string;          // 正規化されたシリアルコード (ハイフンなし大文字英数)
+  serial: string;          // 正規化されたシリアルコード (ハイフンなし大文字英数14文字)
   rawText: string;         // OCR/QRで抽出された生テキスト
   type: string;            // 盤種 ("Type-A" | "Type-B" | "Type-C" | "Type-D" | "通常盤" | "アルバム")
-  singleTitle: string;     // 作品名 (例: "13th Single 卒業写真だけが知ってる")
+  campaignId: string;      // 紐付く作品ID
+  campaignTitle: string;   // 紐付く作品名
+  singleTitle: string;     // 作品名 (後方互換用)
+  applyUrl: string;        // 応募URL
   status: 'unused' | 'used'; // 応募ステータス ('unused': 未応募, 'used': 応募済)
   scanMethod: 'ocr' | 'qr' | 'manual' | 'simulator'; // 登録手段
   createdAt: string;       // ISO 8601 登録日時

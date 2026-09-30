@@ -57,6 +57,7 @@ class SoraScanApp {
     // 作品（Campaign）セレクター要素
     this.selectActiveCampaign = document.getElementById('selectActiveCampaign');
     this.btnManageCampaigns = document.getElementById('btnManageCampaigns');
+    this.badgeActiveSuffix = document.getElementById('badgeActiveSuffix');
 
     // スキャナ要素
     this.videoElement = document.getElementById('cameraVideo');
@@ -96,6 +97,7 @@ class SoraScanApp {
     this.btnCloseConfirmModal = document.getElementById('btnCloseConfirmModal');
     this.modalSerialInput = document.getElementById('modalSerialInput');
     this.modalDuplicateAlert = document.getElementById('modalDuplicateAlert');
+    this.modalSuffixFeedback = document.getElementById('modalSuffixFeedback');
     this.modalTypeSelect = document.getElementById('modalTypeSelect');
     this.modalCampaignSelect = document.getElementById('modalCampaignSelect');
     this.btnModalAddCampaign = document.getElementById('btnModalAddCampaign');
@@ -112,6 +114,7 @@ class SoraScanApp {
     this.inputCampaignEditId = document.getElementById('inputCampaignEditId');
     this.inputCampaignTitle = document.getElementById('inputCampaignTitle');
     this.inputCampaignShortTitle = document.getElementById('inputCampaignShortTitle');
+    this.inputCampaignSuffix = document.getElementById('inputCampaignSuffix');
     this.inputCampaignUrl = document.getElementById('inputCampaignUrl');
     this.inputCampaignPeriod = document.getElementById('inputCampaignPeriod');
     this.checkCampaignSetActive = document.getElementById('checkCampaignSetActive');
@@ -347,6 +350,12 @@ class SoraScanApp {
     this.modalSerialInput.addEventListener('input', () => {
       this.validateModalDuplicate();
     });
+
+    if (this.modalCampaignSelect) {
+      this.modalCampaignSelect.addEventListener('change', () => {
+        this.validateModalDuplicate();
+      });
+    }
 
     // モーダル保存ボタン
     this.btnModalSave.addEventListener('click', () => this.saveModalRecord(false));
@@ -593,9 +602,11 @@ class SoraScanApp {
 
     try {
       const apiKey = Storage.getSettings().geminiApiKey;
+      const expectedSuffix = Storage.getCampaignSuffix();
       const res = await this.scanner.captureAndRecognize(this.videoElement, {
         cropToGuide: true,
-        geminiApiKey: apiKey
+        geminiApiKey: apiKey,
+        expectedSuffix: expectedSuffix
       });
 
       if (!res.bestSerial) {
@@ -629,9 +640,11 @@ class SoraScanApp {
 
     try {
       const apiKey = Storage.getSettings().geminiApiKey;
+      const expectedSuffix = Storage.getCampaignSuffix();
       const res = await this.scanner.captureAndRecognize(file, {
         cropToGuide: false,
-        geminiApiKey: apiKey
+        geminiApiKey: apiKey,
+        expectedSuffix: expectedSuffix
       });
 
       if (!res.bestSerial) {
@@ -731,6 +744,41 @@ class SoraScanApp {
     } else {
       this.modalDuplicateAlert.style.display = 'none';
       this.modalSerialInput.style.borderColor = clean.length === 14 ? '#10B981' : 'var(--sky-blue)';
+    }
+
+    // 末尾2文字サフィックスの整合性チェック & ワンタップ修正UI
+    if (this.modalSuffixFeedback) {
+      const campaignId = this.modalCampaignSelect ? this.modalCampaignSelect.value : Storage.getActiveCampaignId();
+      const expectedSuffix = Storage.getCampaignSuffix(campaignId);
+
+      if (expectedSuffix && clean.length === 14) {
+        const curTail = clean.substring(12, 14);
+        if (curTail === expectedSuffix) {
+          this.modalSuffixFeedback.className = 'suffix-feedback-badge matched';
+          this.modalSuffixFeedback.innerHTML = `<span>✓ アルバム共通末尾 [${expectedSuffix}] と一致</span>`;
+          this.modalSuffixFeedback.style.display = 'flex';
+        } else {
+          this.modalSuffixFeedback.className = 'suffix-feedback-badge mismatched';
+          this.modalSuffixFeedback.innerHTML = `
+            <span>⚠️ 末尾「${curTail}」（この作品は「${expectedSuffix}」の可能性が高いです）</span>
+            <button type="button" class="btn-quick-fix-suffix" id="btnQuickFixSuffix">末尾を ${expectedSuffix} に修正</button>
+          `;
+          this.modalSuffixFeedback.style.display = 'flex';
+
+          const btnFix = this.modalSuffixFeedback.querySelector('#btnQuickFixSuffix');
+          if (btnFix) {
+            btnFix.addEventListener('click', (e) => {
+              e.preventDefault();
+              const fixed = clean.substring(0, 12) + expectedSuffix;
+              this.modalSerialInput.value = Storage.formatSerialForDisplay(fixed);
+              this.validateModalDuplicate();
+              this.showToast(`末尾を「${expectedSuffix}」に修正しました`);
+            }, { once: true });
+          }
+        }
+      } else {
+        this.modalSuffixFeedback.style.display = 'none';
+      }
     }
   }
 
@@ -980,6 +1028,17 @@ class SoraScanApp {
         this.btnOpenLotterySiteLabel.textContent = `${targetCamp.shortTitle || '公式'} 応募サイトを開く ↗`;
       }
     }
+
+    // 5. 対象作品バーの末尾ヒントバッジ更新
+    if (this.badgeActiveSuffix) {
+      const suffix = Storage.getCampaignSuffix(activeId);
+      if (suffix) {
+        this.badgeActiveSuffix.textContent = `🎯 末尾: ${suffix}`;
+        this.badgeActiveSuffix.style.display = 'inline-flex';
+      } else {
+        this.badgeActiveSuffix.style.display = 'none';
+      }
+    }
   }
 
   /**
@@ -994,6 +1053,7 @@ class SoraScanApp {
         this.inputCampaignEditId.value = target.id;
         this.inputCampaignTitle.value = target.title;
         this.inputCampaignShortTitle.value = target.shortTitle || '';
+        if (this.inputCampaignSuffix) this.inputCampaignSuffix.value = target.serialSuffix || '';
         this.inputCampaignUrl.value = target.applyUrl || '';
         this.inputCampaignPeriod.value = target.period || '';
         this.checkCampaignSetActive.checked = (target.id === Storage.getActiveCampaignId());
@@ -1030,7 +1090,10 @@ class SoraScanApp {
 
       card.innerHTML = `
         <div class="campaign-item-info">
-          <div class="campaign-item-title">${this.escapeHtml(c.title)}</div>
+          <div class="campaign-item-title">
+            ${this.escapeHtml(c.title)}
+            ${c.serialSuffix ? `<span class="campaign-card-suffix-tag">末尾: ${this.escapeHtml(c.serialSuffix)}</span>` : ''}
+          </div>
           ${safeCampUrl ? `
             <a href="${this.escapeHtml(safeCampUrl)}" target="_blank" rel="noopener noreferrer" class="campaign-item-url" title="${this.escapeHtml(safeCampUrl)}">
               🔗 ${this.escapeHtml(safeCampUrl)}
@@ -1097,6 +1160,7 @@ class SoraScanApp {
     const editId = this.inputCampaignEditId.value;
     const title = this.inputCampaignTitle.value.trim();
     const shortTitle = this.inputCampaignShortTitle.value.trim();
+    const serialSuffix = this.inputCampaignSuffix ? this.inputCampaignSuffix.value.trim().toUpperCase() : '';
     const applyUrl = this.inputCampaignUrl.value.trim();
     const period = this.inputCampaignPeriod.value.trim();
     const setActive = this.checkCampaignSetActive.checked;
@@ -1113,11 +1177,11 @@ class SoraScanApp {
     }
 
     if (editId) {
-      Storage.updateCampaign(editId, { title, shortTitle, applyUrl: safeUrl, period });
+      Storage.updateCampaign(editId, { title, shortTitle, serialSuffix, applyUrl: safeUrl, period });
       if (setActive) Storage.setActiveCampaignId(editId);
       this.showToast(`作品「${shortTitle || title}」を更新しました`);
     } else {
-      const created = Storage.addCampaign({ title, shortTitle, applyUrl: safeUrl, period });
+      const created = Storage.addCampaign({ title, shortTitle, serialSuffix, applyUrl: safeUrl, period });
       if (setActive) Storage.setActiveCampaignId(created.id);
       this.showToast(`🎉 作品「${shortTitle || title}」を登録しました！`);
     }
@@ -1132,6 +1196,7 @@ class SoraScanApp {
     this.inputCampaignEditId.value = '';
     this.inputCampaignTitle.value = '';
     this.inputCampaignShortTitle.value = '';
+    if (this.inputCampaignSuffix) this.inputCampaignSuffix.value = '';
     this.inputCampaignUrl.value = '';
     this.inputCampaignPeriod.value = '';
     this.checkCampaignSetActive.checked = true;
@@ -1179,6 +1244,7 @@ class SoraScanApp {
   applyDetectedCampaignInfo(info) {
     if (info.title) this.inputCampaignTitle.value = info.title;
     if (info.shortTitle) this.inputCampaignShortTitle.value = info.shortTitle;
+    if (info.serialSuffix && this.inputCampaignSuffix) this.inputCampaignSuffix.value = info.serialSuffix;
     if (info.applyUrl) this.inputCampaignUrl.value = info.applyUrl;
     if (info.period) this.inputCampaignPeriod.value = info.period;
   }
@@ -1187,10 +1253,14 @@ class SoraScanApp {
    * 模擬シリアル券の再生成
    */
   async regenerateMockTicket() {
-    this.currentMockSerial = TicketSimulator.generateRandomSerial();
+    const activeCamp = Storage.getActiveCampaign();
+    const suffix = Storage.getCampaignSuffix();
+    this.currentMockSerial = TicketSimulator.generateRandomSerial(suffix);
     const canvas = await TicketSimulator.renderTicket({
       serial: this.currentMockSerial,
-      type: '初回仕様限定盤 Type-A'
+      type: '初回仕様限定盤 Type-A',
+      singleTitle: `${activeCamp.title}\n発売記念`,
+      applyUrl: activeCamp.applyUrl || 'https://ticket.fortunemeets.app/hinatazaka46/18th'
     });
 
     const target = this.mockTicketCanvas;
@@ -1206,8 +1276,10 @@ class SoraScanApp {
   async scanCurrentMockTicket() {
     this.showToast('模擬シリアル券を解析中...');
     try {
+      const expectedSuffix = Storage.getCampaignSuffix();
       const res = await this.scanner.captureAndRecognize(this.mockTicketCanvas, {
-        cropToGuide: false
+        cropToGuide: false,
+        expectedSuffix: expectedSuffix
       });
 
       if (res.bestSerial) {

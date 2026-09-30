@@ -6,13 +6,22 @@
 export const TicketSimulator = {
   /**
    * ランダムな14文字シリアルコード（英大文字・数字・ハイフンなし）を生成
+   * @param {string} [suffix] - アルバム共通の末尾2文字（例: 'TN'）。指定時は末尾2文字を固定
    */
-  generateRandomSerial() {
+  generateRandomSerial(suffix = null) {
     const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const normSuffix = suffix ? String(suffix).trim().toUpperCase().substring(0, 2) : '';
+    const randomLen = normSuffix.length === 2 ? 12 : 14;
+
     let result = '';
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < randomLen; i++) {
       result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
+
+    if (normSuffix.length === 2) {
+      result += normSuffix;
+    }
+
     return result;
   },
 

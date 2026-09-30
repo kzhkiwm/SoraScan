@@ -6,7 +6,7 @@
 export class ScannerEngine {
   constructor(options = {}) {
     this.videoElement = options.videoElement;
-    this.canvasElement = options.canvasElement || document.createElement('canvas');
+    this.canvasElement = options.canvasElement || (typeof document !== 'undefined' ? document.createElement('canvas') : null);
     this.cropOverlayElement = options.cropOverlayElement; // ガイド枠エレメント
     this.onQRDetected = options.onQRDetected || (() => {});
     this.onStatusChange = options.onStatusChange || (() => {});
@@ -315,6 +315,12 @@ JSONフォーマット例:
           text = text.replace(/^```json/i, '').replace(/```$/i, '').trim();
           const parsed = JSON.parse(text);
           if (parsed && (parsed.title || parsed.applyUrl)) {
+            if (parsed.serial && typeof parsed.serial === 'string') {
+              const cleanS = parsed.serial.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+              if (cleanS.length === 14 && !parsed.serialSuffix) {
+                parsed.serialSuffix = cleanS.substring(12, 14);
+              }
+            }
             this.triggerSuccessEffect();
             this.onStatusChange({ status: 'done', message: 'Gemini AIで作品名と応募サイトURLを検出しました' });
             return parsed;
@@ -411,9 +417,15 @@ JSONフォーマット例:
       shortTitle = match ? match[1] || match[2] : detectedTitle.substring(0, 16);
     }
 
+    let serialSuffix = '';
+    if (detectedSerial && detectedSerial.length === 14) {
+      serialSuffix = detectedSerial.substring(12, 14);
+    }
+
     return {
       title: detectedTitle || '日向坂46 18thシングル『イチャイチャ虫』',
       shortTitle: shortTitle || '18th「イチャイチャ虫」',
+      serialSuffix: serialSuffix,
       applyUrl: detectedUrl || 'https://ticket.fortunemeets.app/hinatazaka46/18th',
       period: detectedPeriod || '2026/09/30 10:00 〜 2026/11/30 23:59',
       serial: detectedSerial || null
@@ -424,8 +436,9 @@ JSONフォーマット例:
    * Gemini Vision API による超高精度AI解析
    * @param {HTMLImageElement|HTMLVideoElement|Blob|File|HTMLCanvasElement} source
    * @param {string} apiKey
+   * @param {string} [expectedSuffix]
    */
-  async recognizeWithGemini(source, apiKey) {
+  async recognizeWithGemini(source, apiKey, expectedSuffix = '') {
     if (!apiKey) throw new Error('Gemini APIキーが設定されていません');
 
     this.onStatusChange({ status: 'processing', message: 'Gemini AIで券面を高精度解析中...' });
@@ -456,8 +469,12 @@ JSONフォーマット例:
 
     const base64Data = dataUrl.split(',')[1];
 
-    const prompt = `日向坂46のCD封入スペシャル抽選応募シリアルナンバーの券面画像です。
+    const suffixHint = (expectedSuffix && expectedSuffix.length === 2)
+      ? `\n【作品固有の確定情報（重要ヒント）】\n- このCD作品のシリアルナンバーは、末尾2文字が必ず「${expectedSuffix}」で終わることが確定しています。\n- 末尾2文字の認識・判定にはこの「${expectedSuffix}」を最優先の照合ヒントとして利用し、かすれや類似文字（TとI/1/7、NとM/H、8とBなど）の誤読を防ぎ、正確に判定してください。\n`
+      : '';
 
+    const prompt = `日向坂46のCD封入スペシャル抽選応募シリアルナンバーの券面画像です。
+${suffixHint}
 【重要：シリアルナンバーの位置とレイアウト】
 - 券面の下部に「四角い枠線（シリアルボックス）」があり、その枠線の左上に小さく「シリアルナンバー」と日本語で印刷されています。
 - その「シリアルナンバー」という文字の真下に、大きなフォントで横1行に印字されている【英大文字と数字の連続する14文字（ハイフンなし）】（例: "JR4KAR7KQ4B8TN"）が目的のシリアルコードです。
@@ -502,7 +519,19 @@ JSONフォーマット例:
 
     const resJson = await response.json();
     const candidateText = resJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-    const cleanSerial = candidateText.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    let cleanSerial = candidateText.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
+    // 抽出されたシリアルが14文字で末尾2文字が指定サフィックスと1文字違いの類似なら安全に補正
+    if (expectedSuffix && expectedSuffix.length === 2 && cleanSerial.length === 14) {
+      const tail = cleanSerial.substring(12, 14);
+      if (tail !== expectedSuffix) {
+        // 類似文字補正チェック
+        const isNear = this.isSuffixNearMatch(tail, expectedSuffix);
+        if (isNear) {
+          cleanSerial = cleanSerial.substring(0, 12) + expectedSuffix;
+        }
+      }
+    }
 
     this.onStatusChange({ status: 'done', message: 'Gemini AI解析完了' });
     if (cleanSerial) {
@@ -521,16 +550,18 @@ JSONフォーマット例:
   /**
    * 現在のカメラプレビューまたは画像ファイルからOCR文字認識を実行
    * @param {HTMLImageElement|HTMLVideoElement|Blob|File} source
-   * @param {Object} options
+   * @param {Object} options - { cropToGuide, geminiApiKey, expectedSuffix, onProgress }
    */
   async captureAndRecognize(source = null, options = {}) {
     const targetSource = source || this.videoElement;
     if (!targetSource) throw new Error('解析対象の画像または映像がありません');
 
+    const expectedSuffix = options.expectedSuffix ? String(options.expectedSuffix).trim().toUpperCase().substring(0, 2) : '';
+
     // 1. Gemini APIキーが設定されている場合はAI解析を優先（超高精度）
     if (options.geminiApiKey) {
       try {
-        return await this.recognizeWithGemini(targetSource, options.geminiApiKey);
+        return await this.recognizeWithGemini(targetSource, options.geminiApiKey, expectedSuffix);
       } catch (geminiErr) {
         console.warn('Gemini API failed, falling back to local OCR:', geminiErr);
         this.onStatusChange({ status: 'warning', message: 'Gemini AI通信に失敗したため、端末内OCRに切り替えます...' });
@@ -550,8 +581,8 @@ JSONフォーマット例:
     const rawText = result.data.text || '';
     const confidence = result.data.confidence;
 
-    // 5. シリアルナンバー候補の抽出 & クリーニング
-    const extracted = this.parseCandidateSerials(rawText);
+    // 5. シリアルナンバー候補の抽出 & クリーニング (expectedSuffixヒント活用)
+    const extracted = this.parseCandidateSerials(rawText, expectedSuffix);
 
     this.onStatusChange({ status: 'done', message: '解析完了' });
     if (extracted.bestCandidate) {
@@ -694,22 +725,75 @@ JSONフォーマット例:
   }
 
   /**
-   * テキストまたはURLから日向坂46のシリアルナンバーらしき文字列を正規表現で抽出
+   * 2文字のサフィックスが類似（OCR混同文字または1文字違い）しているか判定
+   * @param {string} tail - 判定対象の2文字
+   * @param {string} target - 期待される2文字サフィックス（例: 'TN'）
+   * @returns {boolean}
    */
-  extractSerialFromText(text) {
+  isSuffixNearMatch(tail, target) {
+    if (!tail || !target || tail.length !== 2 || target.length !== 2) return false;
+    if (tail === target) return true;
+
+    // OCR混同文字テーブル
+    const confusableMap = {
+      'T': ['I', '1', '7', 'L', 'J', 'Y'],
+      'N': ['M', 'H', 'W', 'U', 'K', 'V'],
+      '0': ['O', 'Q', 'D', 'U'],
+      'O': ['0', 'Q', 'D'],
+      '1': ['I', 'L', 'T', '7'],
+      'I': ['1', 'L', 'T', '7'],
+      '8': ['B', '3', '6', 'S'],
+      'B': ['8', '6'],
+      '2': ['Z'],
+      'Z': ['2'],
+      '5': ['S'],
+      'S': ['5', '8']
+    };
+
+    const isCharMatchOrConfusable = (c1, c2) => {
+      if (c1 === c2) return true;
+      if (confusableMap[c1] && confusableMap[c1].includes(c2)) return true;
+      if (confusableMap[c2] && confusableMap[c2].includes(c1)) return true;
+      return false;
+    };
+
+    const match0 = isCharMatchOrConfusable(tail[0], target[0]);
+    const match1 = isCharMatchOrConfusable(tail[1], target[1]);
+
+    // 両方が一致または混同文字の場合
+    if (match0 && match1) return true;
+
+    // 1文字が完全一致しており、もう1文字が英数字の何らかの誤読である場合（1文字違い）
+    if ((tail[0] === target[0]) || (tail[1] === target[1])) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * テキストまたはURLから日向坂46のシリアルナンバーらしき文字列を正規表現で抽出
+   * @param {string} text
+   * @param {string} [expectedSuffix]
+   */
+  extractSerialFromText(text, expectedSuffix = '') {
     if (!text) return null;
-    const candidates = this.parseCandidateSerials(text);
+    const candidates = this.parseCandidateSerials(text, expectedSuffix);
     return candidates.bestCandidate;
   }
 
   /**
    * OCR抽出テキストからシリアル候補を複数抽出・スコアリング
+   * アルバム共通の末尾2文字（expectedSuffix）を最優先ヒントとして活用し、スコア加算・誤読自動補正を実施
+   * @param {string} rawText
+   * @param {string} [expectedSuffix] - 例: 'TN'
    */
-  parseCandidateSerials(rawText) {
+  parseCandidateSerials(rawText, expectedSuffix = '') {
     if (!rawText) return { bestCandidate: null, candidates: [] };
 
+    const suffix = expectedSuffix ? String(expectedSuffix).trim().toUpperCase().substring(0, 2) : '';
     const lines = rawText.split(/[\r\n]+/);
-    const candidates = [];
+    let candidates = [];
     const fullTextUpper = rawText.toUpperCase();
 
     // 1. URLクエリパラメータのチェック (QRコード読み取り時)
@@ -783,6 +867,20 @@ JSONフォーマット例:
         const baseScore = (hasLetter && hasDigit) ? 105 : 90;
         candidates.push({ code: cleanLine, raw: line.trim(), score: baseScore + anchorBonus });
       } else if (cleanLine.length > 14) {
+        // expectedSuffixがある場合、行内にsuffixが見つかればその末尾から14文字を優先抽出
+        if (suffix && suffix.length === 2) {
+          let sPos = cleanLine.indexOf(suffix);
+          while (sPos !== -1) {
+            if (sPos >= 12) {
+              const subFromSuffix = cleanLine.substring(sPos - 12, sPos + 2);
+              if (!isBlacklisted(subFromSuffix) && !candidates.some(c => c.code === subFromSuffix)) {
+                candidates.push({ code: subFromSuffix, raw: line.trim(), score: 110 + anchorBonus, source: 'suffix_aligned' });
+              }
+            }
+            sPos = cleanLine.indexOf(suffix, sPos + 1);
+          }
+        }
+
         // 15文字以上ある場合（前後にゴミが付着）、14文字の部分文字列を抽出
         for (let i = 0; i <= cleanLine.length - 14; i++) {
           const sub = cleanLine.substring(i, i + 14);
@@ -794,6 +892,50 @@ JSONフォーマット例:
         candidates.push({ code: cleanLine, raw: line.trim(), score: 65 + anchorBonus });
       }
     });
+
+    // 5. expectedSuffix（アルバム共通末尾2文字）に基づくスコアリングボーナス & 誤読自動補正候補生成
+    if (suffix && suffix.length === 2) {
+      const generatedCandidates = [];
+
+      candidates.forEach(cand => {
+        if (cand.code && cand.code.length === 14) {
+          const tail = cand.code.substring(12, 14);
+          if (tail === suffix) {
+            // 末尾2文字が完全に一致: 強力なボーナス (+35点)
+            cand.score += 35;
+            cand.suffixMatched = true;
+          } else if (this.isSuffixNearMatch(tail, suffix)) {
+            // 末尾2文字が混同文字または1文字違いの場合: 末尾を補正した候補を生成して追加
+            const correctedCode = cand.code.substring(0, 12) + suffix;
+            const alreadyExists = candidates.some(c => c.code === correctedCode) || generatedCandidates.some(c => c.code === correctedCode);
+            if (!alreadyExists) {
+              generatedCandidates.push({
+                code: correctedCode,
+                raw: cand.raw,
+                score: cand.score + 25, // 元候補より優先
+                source: 'suffix_corrected',
+                originalCode: cand.code,
+                suffixCorrected: true
+              });
+            }
+          }
+        }
+      });
+
+      if (generatedCandidates.length > 0) {
+        candidates = candidates.concat(generatedCandidates);
+      }
+    }
+
+    // 重複除去（同一codeの中で最高scoreを残す）
+    const uniqueMap = new Map();
+    candidates.forEach(c => {
+      const existing = uniqueMap.get(c.code);
+      if (!existing || c.score > existing.score) {
+        uniqueMap.set(c.code, c);
+      }
+    });
+    candidates = Array.from(uniqueMap.values());
 
     // スコア降順ソート
     candidates.sort((a, b) => b.score - a.score);

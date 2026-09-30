@@ -40,13 +40,14 @@
         report += `<p style="color:#F87171;">❌ QR Code not detected in full image</p>`;
       }
 
-      // 2. 作品情報・応募URL抽出テスト
+      // 2. 作品情報・応募URL・末尾サフィックス抽出テスト
       try {
-        report += `<h4>3. Campaign (Album & URL) Auto-Extraction:</h4>`;
+        report += `<h4>2. Campaign (Album & URL & Suffix) Auto-Extraction:</h4>`;
         const campRes = await scanner.extractCampaignInfo(img);
         report += `<div style="background:#1E293B; padding:12px; border-radius:8px; border:1px solid #38BDF8;">
           <p><b>Title:</b> <span style="color:#38BDF8;">${campRes.title}</span></p>
           <p><b>Short Title:</b> <span style="color:#7DD3FC;">${campRes.shortTitle}</span></p>
+          <p><b>Serial Suffix (Album Fixed):</b> <span style="color:#34D399; font-weight:800; font-size:1.1rem;">${campRes.serialSuffix || '(未検出)'}</span></p>
           <p><b>Apply URL:</b> <a href="${campRes.applyUrl}" target="_blank" style="color:#FDE047;">${campRes.applyUrl}</a></p>
           <p><b>Period:</b> ${campRes.period || '-'}</p>
         </div>`;
@@ -54,15 +55,35 @@
         report += `<p style="color:red;">Campaign Extraction Error: ${e.message}</p>`;
       }
 
-      // 3. OCRテスト
+      // 3. OCRテスト（末尾ヒント expectedSuffix: 'TN' 適用）
       try {
-        out.innerHTML = report + '<p>Running OCR...</p>';
-        const res = await scanner.captureAndRecognize(img, { cropToGuide: false });
+        out.innerHTML = report + '<p>Running OCR with Suffix Hint "TN"...</p>';
+        const res = await scanner.captureAndRecognize(img, { cropToGuide: false, expectedSuffix: 'TN' });
+        report += `<h4>3. OCR Recognition with Suffix Hint ("TN"):</h4>`;
         report += `<p><b>Best Serial Detected:</b> <span style="font-size:1.4rem; color:#60A5FA;">${res.bestSerial}</span></p>`;
+        const isMatched = res.bestSerial && res.bestSerial.endsWith('TN');
+        report += `<p><b>Suffix Match Check:</b> ${isMatched ? '<span style="color:#4ADE80;">✅ Suffix "TN" Matched!</span>' : '<span style="color:#F87171;">❌ Not ended with TN</span>'}</p>`;
         report += `<pre style="background:#333; padding:10px;">Raw Text:\n${res.rawText}</pre>`;
-        report += `<p>Candidates: ${JSON.stringify(res.candidates, null, 2)}</p>`;
+        report += `<p>Candidates (Top 3): ${JSON.stringify(res.candidates.slice(0, 3), null, 2)}</p>`;
       } catch (e) {
         report += `<p style="color:red;">OCR Error: ${e.message}</p>`;
+      }
+
+      // 4. アルゴリズム単体テスト: 誤読自動補正シミュレーション (M -> N 補正)
+      try {
+        report += `<h4>4. Suffix Auto-Correction Unit Test:</h4>`;
+        const simulatedRawWithMisread = "シリアルナンバー\nJR4KAR7KQ4B8TM"; // 末尾がMに誤読されたケース
+        const testRes = scanner.parseCandidateSerials(simulatedRawWithMisread, 'TN');
+        const best = testRes.bestCandidate;
+        const passed = (best === 'JR4KAR7KQ4B8TN');
+        report += `<div style="background:#1E293B; padding:12px; border-radius:8px; border:1px solid ${passed ? '#4ADE80' : '#F87171'};">
+          <p><b>Simulated Input:</b> <code>JR4KAR7KQ4B8TM</code> (末尾 M の誤読)</p>
+          <p><b>Expected Suffix:</b> <code>TN</code></p>
+          <p><b>Corrected Result:</b> <b style="font-size:1.2rem; color:${passed ? '#4ADE80' : '#F87171'};">${best}</b></p>
+          <p><b>Status:</b> ${passed ? '✅ 誤読「M」が自動でアルバム仕様の「N」に完全補正されました！' : '❌ 補正失敗'}</p>
+        </div>`;
+      } catch (e) {
+        report += `<p style="color:red;">Unit Test Error: ${e.message}</p>`;
       }
 
       out.innerHTML = report;

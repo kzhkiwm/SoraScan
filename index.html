@@ -65,6 +65,7 @@
       <select id="selectActiveCampaign" class="campaign-select" aria-label="対象シングル・アルバムを選択">
         <!-- JSで動的生成 -->
       </select>
+      <span id="badgeActiveSuffix" class="campaign-suffix-pill" style="display:none;" title="この作品のシリアル末尾固定文字">末尾: TN</span>
     </div>
     <div class="campaign-bar-actions">
       <button id="btnManageCampaigns" class="campaign-btn-manage" title="作品と応募サイトの登録・管理">
@@ -393,6 +394,7 @@
           <div id="modalCharCounter" style="margin-top: 6px; font-size: 0.78rem; font-weight: 700; color: var(--sky-blue);">
             文字数: 0 / 14文字
           </div>
+          <div id="modalSuffixFeedback" class="suffix-feedback-badge" style="display:none; margin-top: 6px;"></div>
         </div>
 
         <!-- Quick Char Correction Helper (for OCR misreads) -->
@@ -618,6 +620,19 @@
               短縮表示名（ボタン・バッジ用）
             </label>
             <input type="text" id="inputCampaignShortTitle" class="form-input" placeholder="例: 18th「イチャイチャ虫」">
+          </div>
+
+          <div class="form-group">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <label class="form-label" for="inputCampaignSuffix">
+                シリアル末尾2文字（文字認識ヒント）
+              </label>
+              <span style="font-size:0.72rem; color:var(--sky-blue); font-weight:700;">アルバム共通</span>
+            </div>
+            <input type="text" id="inputCampaignSuffix" class="form-input" placeholder="例: TN" maxlength="2" style="text-transform:uppercase; font-family:monospace; font-weight:700; letter-spacing:1px; width:120px;">
+            <div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
+              ※同一シングル・アルバムで共通する末尾2文字（例: TN）。設定するとOCR認識精度と誤読自動補正が大幅に向上します（未入力時は自動学習）。
+            </div>
           </div>
 
           <div class="form-group">

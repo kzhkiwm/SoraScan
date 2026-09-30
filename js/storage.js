@@ -13,6 +13,7 @@ export const DEFAULT_CAMPAIGNS = [
     id: 'camp_18th_single',
     title: '日向坂46 18thシングル『イチャイチャ虫』',
     shortTitle: '18th「イチャイチャ虫」',
+    serialSuffix: 'TN',
     applyUrl: 'https://ticket.fortunemeets.app/hinatazaka46/18th#/registration',
     period: '2026/09/30 10:00 〜 2026/11/30 23:59',
     createdAt: '2026-09-30T10:00:00.000Z'
@@ -61,14 +62,46 @@ export const Storage = {
   },
 
   /**
+   * シリアル末尾2文字（サフィックス）の正規化
+   * @param {string} suffix
+   * @returns {string} 2文字以内の大文字英数字
+   */
+  normalizeSuffix(suffix) {
+    if (!suffix || typeof suffix !== 'string') return '';
+    return suffix.replace(/[^A-Za-z0-9]/g, '').toUpperCase().substring(0, 2);
+  },
+
+  /**
    * 作品・キャンペーン一覧の取得
    */
   getCampaigns() {
     try {
       const data = localStorage.getItem(CAMPAIGNS_KEY);
       if (data) {
-        const parsed = JSON.parse(data);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        let parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // 下位互換マイグレーション: 18thシングル『イチャイチャ虫』にserialSuffixがなければ補完
+          let modified = false;
+          parsed = parsed.map(c => {
+            if (c.id === 'camp_18th_single' && !c.serialSuffix) {
+              c.serialSuffix = 'TN';
+              modified = true;
+            } else if (c.serialSuffix) {
+              const norm = this.normalizeSuffix(c.serialSuffix);
+              if (norm !== c.serialSuffix) {
+                c.serialSuffix = norm;
+                modified = true;
+              }
+            } else {
+              c.serialSuffix = '';
+            }
+            return c;
+          });
+          if (modified) {
+            this.saveCampaigns(parsed);
+          }
+          return parsed;
+        }
       }
       // 初期データを保存
       this.saveCampaigns(DEFAULT_CAMPAIGNS);
@@ -181,11 +214,13 @@ export const Storage = {
     }
 
     const safeUrl = this.sanitizeUrl(data.applyUrl || '');
+    const serialSuffix = this.normalizeSuffix(data.serialSuffix || '');
 
     const newCampaign = {
       id,
       title: data.title.trim(),
       shortTitle: shortTitle.trim(),
+      serialSuffix: serialSuffix,
       applyUrl: safeUrl,
       period: (data.period || '').trim(),
       createdAt: new Date().toISOString()
@@ -206,6 +241,9 @@ export const Storage = {
 
     if (updates.applyUrl !== undefined) {
       updates.applyUrl = this.sanitizeUrl(updates.applyUrl);
+    }
+    if (updates.serialSuffix !== undefined) {
+      updates.serialSuffix = this.normalizeSuffix(updates.serialSuffix);
     }
 
     campaigns[idx] = { ...campaigns[idx], ...updates };
@@ -228,6 +266,69 @@ export const Storage = {
     }
 
     return campaigns[idx];
+  },
+
+  /**
+   * 作品のシリアル末尾2文字（サフィックス）を取得
+   * 設定されていない場合、既存の登録シリアルから最頻値を自動推論
+   * @param {string} [campaignId]
+   * @returns {string} 2文字の大文字英数字（未定なら空文字）
+   */
+  getCampaignSuffix(campaignId = null) {
+    const campaigns = this.getCampaigns();
+    const targetCamp = campaignId 
+      ? (campaigns.find(c => c.id === campaignId) || this.getActiveCampaign())
+      : this.getActiveCampaign();
+
+    if (targetCamp && targetCamp.serialSuffix) {
+      return targetCamp.serialSuffix;
+    }
+
+    // 未設定の場合、該当作品に登録されている14文字シリアルから末尾2文字を推論
+    if (targetCamp) {
+      const serials = this.getAll(targetCamp.id);
+      const counts = {};
+      serials.forEach(item => {
+        const s = this.normalizeSerial(item.serial);
+        if (s.length === 14) {
+          const suffix = s.substring(12, 14);
+          counts[suffix] = (counts[suffix] || 0) + 1;
+        }
+      });
+
+      let bestSuffix = '';
+      let maxCount = 0;
+      for (const [suffix, count] of Object.entries(counts)) {
+        if (count > maxCount) {
+          maxCount = count;
+          bestSuffix = suffix;
+        }
+      }
+      return bestSuffix;
+    }
+
+    return '';
+  },
+
+  /**
+   * シリアル登録時に作品の末尾2文字が未設定なら自動学習して保存
+   * @param {string} campaignId
+   * @param {string} serial
+   * @returns {boolean} 新たに学習・更新されたかどうか
+   */
+  inferAndSaveCampaignSuffix(campaignId, serial) {
+    if (!campaignId || !serial) return false;
+    const clean = this.normalizeSerial(serial);
+    if (clean.length !== 14) return false;
+
+    const suffix = clean.substring(12, 14);
+    const campaigns = this.getCampaigns();
+    const camp = campaigns.find(c => c.id === campaignId);
+    if (camp && !camp.serialSuffix) {
+      this.updateCampaign(campaignId, { serialSuffix: suffix });
+      return true;
+    }
+    return false;
   },
 
   /**
@@ -308,6 +409,10 @@ export const Storage = {
 
     list.unshift(record);
     this._saveAll(list);
+
+    // 作品の末尾2文字が未登録の場合は自動学習
+    this.inferAndSaveCampaignSuffix(targetCamp.id, cleanSerial);
+
     return record;
   },
 
