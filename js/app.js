@@ -10,7 +10,7 @@ import { BookmarkletEngine } from './bookmarklet.js';
 
 class SoraScanApp {
   constructor() {
-    this.currentTab = 'viewScanner';
+    this.currentTab = 'viewList';
     this.activeFilter = 'all';
     this.selectedCampaignFilter = 'all';
     this.searchQuery = '';
@@ -209,9 +209,6 @@ class SoraScanApp {
 
     // 模擬券の初回描画
     this.regenerateMockTicket();
-
-    // カメラの起動
-    this.scanner.startCamera();
   }
 
   /**
