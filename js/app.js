@@ -142,6 +142,7 @@ class SoraScanApp {
     this.tabBtnSequencer = document.getElementById('tabBtnSequencer');
     this.panelBookmarklet = document.getElementById('panelBookmarklet');
     this.panelSequencer = document.getElementById('panelSequencer');
+    this.btnCopyTinyBookmarklet = document.getElementById('btnCopyTinyBookmarklet');
     this.btnCopyBookmarklet = document.getElementById('btnCopyBookmarklet');
     this.btnOpenMockSite = document.getElementById('btnOpenMockSite');
     this.btnOpenRealSiteFromModal = document.getElementById('btnOpenRealSiteFromModal');
@@ -1413,7 +1414,10 @@ class SoraScanApp {
       });
     }
 
-    // ブックマークレットコードコピー
+    // ブックマークレットコードコピー（超軽量版 & フル版）
+    if (this.btnCopyTinyBookmarklet) {
+      this.btnCopyTinyBookmarklet.addEventListener('click', () => this.copyTinyBookmarkletCode());
+    }
     if (this.btnCopyBookmarklet) {
       this.btnCopyBookmarklet.addEventListener('click', () => this.copyBookmarkletCode());
     }
@@ -1515,7 +1519,31 @@ class SoraScanApp {
   }
 
   /**
-   * ブックマークレットコードの生成とコピー
+   * Android Chrome向け 超軽量・一括10件入力ブックマークレットコードの生成とコピー
+   */
+  copyTinyBookmarkletCode() {
+    const campId = this.selectAutoApplyCampaign.value;
+    const campaigns = Storage.getCampaigns();
+    const camp = campaigns.find(c => c.id === campId) || Storage.getActiveCampaign();
+    const unusedList = Storage.getUnused(campId);
+
+    if (unusedList.length === 0) {
+      this.showToast(`⚠️ 「${camp.shortTitle || camp.title}」には未応募のシリアルがありません`);
+      return;
+    }
+
+    const count = Math.min(unusedList.length, 10);
+    const code = BookmarkletEngine.generateTinyCode(unusedList, camp);
+
+    navigator.clipboard.writeText(code).then(() => {
+      this.showToast(`⚡ 【超軽量版】最大${count}件一括コード（${code.length}文字）をコピーしました！`);
+    }).catch(() => {
+      prompt('以下のブックマークレットコードをコピーしてください:', code);
+    });
+  }
+
+  /**
+   * ブックマークレットコードの生成とコピー（フル操作バー版）
    */
   copyBookmarkletCode() {
     const campId = this.selectAutoApplyCampaign.value;

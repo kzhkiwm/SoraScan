@@ -14,6 +14,27 @@
 
 export class BookmarkletEngine {
   /**
+   * Android Chrome等の文字数制限（約2KB）を完全クリアする超軽量・一括10件入力ブックマークレット
+   * UIスタイルや装飾を一切含めず、純粋な入力枠自動拡張＆React値注入ロジックのみ（約700〜850文字）
+   * @param {Array<{serial: string, id?: string}>} serials - 未応募シリアルの配列
+   * @param {Object} campaignInfo - 作品情報
+   * @returns {string} `javascript:(...)` 形式の軽量コード
+   */
+  static generateTinyCode(serials = [], campaignInfo = {}) {
+    const serialList = serials
+      .map(s => (typeof s === 'string' ? s : s.serial).trim().toUpperCase())
+      .filter(s => s.length >= 10)
+      .slice(0, 10); // forTUNE meets公式の最大一括数10枠
+
+    const jsonList = JSON.stringify(serialList);
+
+    // 最小・高圧縮のワンライナー（Android Chrome URL長制限・セルフXSS対策を考慮）
+    const code = `javascript:(function(){const s=${jsonList};if(!s.length){alert('⚠️ 登録対象の未応募シリアルがありません');return;}let i=0;function setV(e,v){const p=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value')?.set;if(p)p.call(e,v);else e.value=v;e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));}function run(){while(i<s.length&&i<10){let inp=document.querySelector('#inputSerial'+(i+1));if(!inp){const b=[...document.querySelectorAll('button,a')].find(x=>x.textContent.includes('枠を追加'));if(b&&!b.disabled){b.click();setTimeout(run,60);return;}}if(inp){setV(inp,s[i]);i++;}}const sub=document.querySelector('#btnSubmitSerial,button.green,input[type="submit"]');if(sub)sub.disabled=false;alert('☀️ SoraScan: '+i+'件のシリアルを一括入力しました！\\n内容を確認して「シリアルナンバー登録」を押してください。');}run();})();`;
+
+    return code;
+  }
+
+  /**
    * 未応募シリアル配列と作品情報を元に、応募サイトで実行可能なブックマークレットコード（javascript: URL）を生成
    * @param {Array<{serial: string, id?: string}>} serials - 未応募シリアルの配列
    * @param {Object} campaignInfo - 作品情報（title, applyUrl等）
