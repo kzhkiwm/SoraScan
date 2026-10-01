@@ -235,6 +235,13 @@
 
       <!-- Batch Actions Bar -->
       <div class="batch-actions-bar">
+        <button id="btnOpenBatchImportModal" class="batch-btn batch-import-btn" title="外部ツールやメモからシリアルを一括登録">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"></path>
+          </svg>
+          📥 シリアル一括登録
+        </button>
+
         <button id="btnOpenAutoApplyModal" class="batch-btn auto-apply-btn" title="シリアルを応募サイトに自動で連続登録">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
@@ -309,10 +316,15 @@
           <polyline points="10 9 9 9 8 9"></polyline>
         </svg>
         <div class="empty-title">シリアルナンバーがありません</div>
-        <div class="empty-desc">「スキャン」タブからCD封入券を撮影するか、模擬券でテストしてみてください。</div>
-        <button id="btnEmptyGoScan" class="btn-primary" style="margin: 0 auto; max-width: 220px; font-size: 0.9rem;">
-          スキャンを始める
-        </button>
+        <div class="empty-desc">「スキャン」タブからCD封入券を撮影するか、他のツールで読取済みの場合は「一括登録」してください。</div>
+        <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:12px;">
+          <button id="btnEmptyGoScan" class="btn-primary" style="max-width: 170px; font-size: 0.9rem;">
+            スキャンを始める
+          </button>
+          <button id="btnEmptyGoBatchImport" class="btn-secondary" style="max-width: 170px; font-size: 0.9rem;">
+            📥 シリアル一括登録
+          </button>
+        </div>
       </div>
 
     </section>
@@ -877,6 +889,108 @@
           </div>
         </div>
 
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- Modal: Batch Serial Import -->
+  <!-- ========================================== -->
+  <div class="modal-backdrop" id="modalBatchImport">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--sky-blue)" stroke-width="2.5">
+            <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"></path>
+          </svg>
+          シリアルナンバー一括登録
+        </div>
+        <button class="icon-btn" id="btnCloseBatchImportModal" aria-label="閉じる">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:14px; line-height:1.5;">
+          外部ツール等で読み取ったシリアルコードをまとめて登録できます。<br>
+          複数スペースや改行で区切られたデータから、<strong>対象作品の末尾2文字に合致する14桁コードのみ</strong>を有効データとして自動抽出します。
+        </p>
+
+        <!-- Target Campaign Selector & Suffix Info -->
+        <div class="form-group" style="margin-bottom:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label class="form-label" for="selectBatchImportCampaign" style="margin-bottom:0;">対象作品（シングル・アルバム）</label>
+            <span id="badgeBatchImportSuffix" class="campaign-suffix-pill" style="display:none;">末尾: TN 必須</span>
+          </div>
+          <select id="selectBatchImportCampaign" class="form-select">
+            <!-- JSで動的生成 -->
+          </select>
+        </div>
+
+        <!-- Note (Optional) -->
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label" for="inputBatchImportNote">メモ（任意）</label>
+          <input type="text" id="inputBatchImportNote" class="form-input" placeholder="例: 外部ツール取込分、オンラインミート＆グリート など">
+        </div>
+
+        <!-- Input Area Header with Clipboard Paste Button -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <label class="form-label" for="textareaBatchImportSerials" style="margin-bottom:0;">
+            シリアルコード入力
+          </label>
+          <button type="button" id="btnBatchImportPasteClipboard" class="batch-paste-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            クリップボードから貼付
+          </button>
+        </div>
+
+        <!-- Textarea -->
+        <textarea id="textareaBatchImportSerials" class="form-textarea batch-import-textarea" rows="6" placeholder="複数スペースまたは改行区切りのシリアルコードを貼り付けてください&#10;&#10;例:&#10;JR4KAR7KQ4B8TN   99H1J6S8K9L0TN&#10;ABCD1234EF56TN" spellcheck="false" autocomplete="off"></textarea>
+
+        <!-- Live Validation Summary Bar -->
+        <div class="batch-summary-card" id="batchImportSummary">
+          <div class="batch-summary-header">
+            <span>📊 解析サマリー</span>
+            <span id="batchSummaryNotice" style="font-size:0.75rem; color:var(--text-muted);">テキストを入力してください</span>
+          </div>
+          <div class="batch-badges-grid">
+            <div class="batch-badge-item badge-valid">
+              <span class="badge-label">有効検出</span>
+              <span class="badge-num" id="badgeBatchValidCount">0</span>
+            </div>
+            <div class="batch-badge-item badge-new">
+              <span class="badge-label">新規登録対象</span>
+              <span class="badge-num" id="badgeBatchNewCount">0</span>
+            </div>
+            <div class="batch-badge-item badge-dup">
+              <span class="badge-label">既存重複(スキップ)</span>
+              <span class="badge-num" id="badgeBatchDupCount">0</span>
+            </div>
+            <div class="batch-badge-item badge-invalid">
+              <span class="badge-label">除外(桁/末尾不一致)</span>
+              <span class="badge-num" id="badgeBatchInvalidCount">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Preview Chips Container -->
+        <div class="batch-preview-wrapper" id="batchPreviewWrapper" style="display:none; margin-top:12px;">
+          <div style="font-size:0.78rem; font-weight:700; color:var(--text-muted); margin-bottom:6px;">
+            抽出プレビュー（上位20件まで表示）:
+          </div>
+          <div id="batchPreviewChips" class="batch-preview-chips"></div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button id="btnCancelBatchImport" class="btn-secondary">
+          キャンセル
+        </button>
+        <button id="btnExecuteBatchImport" class="btn-primary" disabled style="padding: 10px 20px;">
+          一括登録を実行 (0件)
+        </button>
       </div>
     </div>
   </div>

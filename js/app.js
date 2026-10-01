@@ -20,6 +20,7 @@ class SoraScanApp {
 
     // 現在のモーダル編集対象
     this.pendingRecord = null;
+    this.currentBatchAnalysis = null;
 
     // シーケンサー状態
     this.sequencer = {
@@ -160,7 +161,26 @@ class SoraScanApp {
     this.btnStartSequencer = document.getElementById('btnStartSequencer');
     this.seqActiveControls = document.getElementById('seqActiveControls');
     this.btnSeqSkipCurrent = document.getElementById('btnSeqSkipCurrent');
-    this.btnStopSequencer = document.getElementById('btnStopSequencer');
+    // シリアル一括登録モーダル要素
+    this.modalBatchImport = document.getElementById('modalBatchImport');
+    this.btnOpenBatchImportModal = document.getElementById('btnOpenBatchImportModal');
+    this.btnEmptyGoBatchImport = document.getElementById('btnEmptyGoBatchImport');
+    this.btnCloseBatchImportModal = document.getElementById('btnCloseBatchImportModal');
+    this.btnCancelBatchImport = document.getElementById('btnCancelBatchImport');
+    this.selectBatchImportCampaign = document.getElementById('selectBatchImportCampaign');
+    this.badgeBatchImportSuffix = document.getElementById('badgeBatchImportSuffix');
+    this.inputBatchImportNote = document.getElementById('inputBatchImportNote');
+    this.btnBatchImportPasteClipboard = document.getElementById('btnBatchImportPasteClipboard');
+    this.textareaBatchImportSerials = document.getElementById('textareaBatchImportSerials');
+    this.batchImportSummary = document.getElementById('batchImportSummary');
+    this.batchSummaryNotice = document.getElementById('batchSummaryNotice');
+    this.badgeBatchValidCount = document.getElementById('badgeBatchValidCount');
+    this.badgeBatchNewCount = document.getElementById('badgeBatchNewCount');
+    this.badgeBatchDupCount = document.getElementById('badgeBatchDupCount');
+    this.badgeBatchInvalidCount = document.getElementById('badgeBatchInvalidCount');
+    this.batchPreviewWrapper = document.getElementById('batchPreviewWrapper');
+    this.batchPreviewChips = document.getElementById('batchPreviewChips');
+    this.btnExecuteBatchImport = document.getElementById('btnExecuteBatchImport');
 
     // トースト
     this.toastContainer = document.getElementById('toastContainer');
@@ -285,6 +305,35 @@ class SoraScanApp {
 
     if (this.btnEmptyGoScan) {
       this.btnEmptyGoScan.addEventListener('click', () => this.switchTab('viewScanner'));
+    }
+
+    // シリアル一括登録モーダル開閉
+    if (this.btnOpenBatchImportModal) {
+      this.btnOpenBatchImportModal.addEventListener('click', () => this.openBatchImportModal());
+    }
+    if (this.btnEmptyGoBatchImport) {
+      this.btnEmptyGoBatchImport.addEventListener('click', () => this.openBatchImportModal());
+    }
+    if (this.btnCloseBatchImportModal) {
+      this.btnCloseBatchImportModal.addEventListener('click', () => this.closeBatchImportModal());
+    }
+    if (this.btnCancelBatchImport) {
+      this.btnCancelBatchImport.addEventListener('click', () => this.closeBatchImportModal());
+    }
+    if (this.selectBatchImportCampaign) {
+      this.selectBatchImportCampaign.addEventListener('change', () => {
+        this.updateBatchImportSuffixBadge();
+        this.updateBatchImportAnalysis();
+      });
+    }
+    if (this.textareaBatchImportSerials) {
+      this.textareaBatchImportSerials.addEventListener('input', () => this.updateBatchImportAnalysis());
+    }
+    if (this.btnBatchImportPasteClipboard) {
+      this.btnBatchImportPasteClipboard.addEventListener('click', () => this.pasteClipboardToBatchImport());
+    }
+    if (this.btnExecuteBatchImport) {
+      this.btnExecuteBatchImport.addEventListener('click', () => this.executeBatchImport());
     }
 
     // 連続スキャン切り替え
@@ -1717,6 +1766,171 @@ class SoraScanApp {
     this.updateAutoApplyView();
     this.renderList();
     this.showToast(`🎉 全${this.sequencer.total}件のシリアル応募フローが完了しました！`);
+  }
+
+  /**
+   * シリアルナンバー一括登録モーダルを開く
+   */
+  openBatchImportModal() {
+    const campaigns = Storage.getCampaigns();
+    const activeCampId = Storage.getActiveCampaignId();
+
+    this.selectBatchImportCampaign.innerHTML = campaigns.map(c => `
+      <option value="${c.id}" ${c.id === activeCampId ? 'selected' : ''}>
+        ${this.escapeHtml(c.shortTitle || c.title)}
+      </option>
+    `).join('');
+
+    this.inputBatchImportNote.value = '';
+    this.textareaBatchImportSerials.value = '';
+    this.updateBatchImportSuffixBadge();
+    this.updateBatchImportAnalysis();
+
+    this.modalBatchImport.classList.add('open');
+    setTimeout(() => {
+      this.textareaBatchImportSerials.focus();
+    }, 100);
+  }
+
+  /**
+   * シリアルナンバー一括登録モーダルを閉じる
+   */
+  closeBatchImportModal() {
+    this.modalBatchImport.classList.remove('open');
+    this.currentBatchAnalysis = null;
+  }
+
+  /**
+   * 選択作品の末尾サフィックスバッジ表示を更新
+   */
+  updateBatchImportSuffixBadge() {
+    const campId = this.selectBatchImportCampaign.value;
+    const suffix = Storage.getCampaignSuffix(campId);
+    if (suffix) {
+      this.badgeBatchImportSuffix.textContent = `末尾: ${suffix} 必須`;
+      this.badgeBatchImportSuffix.style.display = 'inline-flex';
+    } else {
+      this.badgeBatchImportSuffix.style.display = 'none';
+    }
+  }
+
+  /**
+   * 一括入力テキストをリアルタイム解析してサマリーとプレビューを更新
+   */
+  updateBatchImportAnalysis() {
+    const rawText = this.textareaBatchImportSerials.value;
+    const campId = this.selectBatchImportCampaign.value;
+    const suffix = Storage.getCampaignSuffix(campId);
+
+    const result = Storage.parseBatchSerials(rawText, campId);
+    this.currentBatchAnalysis = result;
+
+    this.badgeBatchValidCount.textContent = result.validCount;
+    this.badgeBatchNewCount.textContent = result.newSerials.length;
+    this.badgeBatchDupCount.textContent = result.existingSerials.length;
+    this.badgeBatchInvalidCount.textContent = result.invalidCount;
+
+    if (!rawText.trim()) {
+      this.batchSummaryNotice.textContent = 'テキストを入力してください';
+      this.btnExecuteBatchImport.disabled = true;
+      this.btnExecuteBatchImport.textContent = '一括登録を実行 (0件)';
+      this.batchPreviewWrapper.style.display = 'none';
+      this.batchPreviewChips.innerHTML = '';
+      return;
+    }
+
+    let notice = '';
+    if (suffix) {
+      notice = `対象作品の末尾「${suffix}」と合致する14桁コードを抽出中`;
+    } else {
+      notice = '14桁英数字コードを抽出中';
+    }
+    if (result.duplicateInInputCount > 0) {
+      notice += ` (入力内重複 ${result.duplicateInInputCount}件を統合)`;
+    }
+    this.batchSummaryNotice.textContent = notice;
+
+    const newCount = result.newSerials.length;
+    if (newCount > 0) {
+      this.btnExecuteBatchImport.disabled = false;
+      this.btnExecuteBatchImport.textContent = `一括登録を実行 (${newCount}件)`;
+    } else {
+      this.btnExecuteBatchImport.disabled = true;
+      this.btnExecuteBatchImport.textContent = result.existingSerials.length > 0
+        ? 'すべて登録済みです (0件)'
+        : '一括登録を実行 (0件)';
+    }
+
+    // プレビューチップの描画 (上位20件)
+    const previewList = [
+      ...result.newSerials.map(s => ({ code: s.serial, isNew: true })),
+      ...result.existingSerials.map(s => ({ code: s.serial, isNew: false }))
+    ];
+
+    if (previewList.length > 0) {
+      this.batchPreviewWrapper.style.display = 'block';
+      const maxDisplay = 20;
+      const displayItems = previewList.slice(0, maxDisplay);
+      this.batchPreviewChips.innerHTML = displayItems.map(item => `
+        <span class="batch-chip ${item.isNew ? 'chip-new' : 'chip-dup'}" title="${item.isNew ? '新規登録' : '既存登録済み(スキップ)'}">
+          ${this.escapeHtml(Storage.formatSerialForDisplay(item.code))}
+          <span style="font-size:0.65rem; opacity:0.8;">(${item.isNew ? '新規' : '登録済'})</span>
+        </span>
+      `).join('') + (previewList.length > maxDisplay ? `<span style="font-size:0.75rem; color:var(--text-muted); align-self:center;">...他 ${previewList.length - maxDisplay} 件</span>` : '');
+    } else {
+      this.batchPreviewWrapper.style.display = 'none';
+      this.batchPreviewChips.innerHTML = '';
+    }
+  }
+
+  /**
+   * クリップボードから貼り付け
+   */
+  async pasteClipboardToBatchImport() {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        throw new Error('クリップボードAPI非対応');
+      }
+      const text = await navigator.clipboard.readText();
+      if (!text || !text.trim()) {
+        this.showToast('⚠️ クリップボードが空です');
+        return;
+      }
+      this.textareaBatchImportSerials.value = text;
+      this.updateBatchImportAnalysis();
+      this.showToast('📋 クリップボードからテキストを貼り付けました');
+    } catch (e) {
+      console.warn('Clipboard read failed:', e);
+      this.showToast('⚠️ クリップボードの自動読取が制限されています。直接貼り付けてください');
+      this.textareaBatchImportSerials.focus();
+    }
+  }
+
+  /**
+   * 一括登録の実行
+   */
+  executeBatchImport() {
+    if (!this.currentBatchAnalysis || this.currentBatchAnalysis.newSerials.length === 0) {
+      this.showToast('⚠️ 新規登録可能なシリアルがありません');
+      return;
+    }
+
+    const campId = this.selectBatchImportCampaign.value;
+    const note = this.inputBatchImportNote.value.trim();
+    const newItems = this.currentBatchAnalysis.newSerials.map(s => ({
+      serial: s.serial,
+      note
+    }));
+
+    const result = Storage.batchAdd(newItems, campId, note);
+
+    if (result.addedCount > 0) {
+      this.showToast(`🎉 ${result.addedCount} 件のシリアルを一括登録しました！`);
+      this.closeBatchImportModal();
+      this.renderList();
+    } else {
+      this.showToast('⚠️ 登録できるシリアルがありませんでした');
+    }
   }
 
   /**

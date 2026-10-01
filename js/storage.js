@@ -417,6 +417,168 @@ export const Storage = {
   },
 
   /**
+   * テキストから一括シリアルデータをパース・検証
+   * 複数スペース・改行区切りから14桁英数字かつ作品末尾2文字に合致するもののみ抽出
+   * @param {string} rawText
+   * @param {string} [campaignId]
+   * @returns {Object}
+   */
+  parseBatchSerials(rawText, campaignId = null) {
+    if (!rawText || typeof rawText !== 'string') {
+      return {
+        expectedSuffix: '',
+        totalTokens: 0,
+        validCount: 0,
+        newSerials: [],
+        existingSerials: [],
+        duplicateInInputCount: 0,
+        invalidCount: 0,
+        invalidSamples: []
+      };
+    }
+
+    const expectedSuffix = this.getCampaignSuffix(campaignId);
+    // 空白文字（スペース、タブ、改行、全角スペース、カンマ）でトークン分割
+    const tokens = rawText.split(/[\s,]+/g).map(t => t.trim()).filter(t => t.length > 0);
+
+    const validTokens = [];
+    const invalidTokens = [];
+    const seenInInput = new Set();
+    let duplicateInInputCount = 0;
+
+    tokens.forEach(tok => {
+      const clean = this.normalizeSerial(tok);
+      if (!clean) return;
+
+      // 14桁英数字チェック
+      const is14Alphanum = clean.length === 14 && /^[A-Z0-9]{14}$/.test(clean);
+      // 末尾2文字チェック（作品に設定されている場合のみ）
+      const matchesSuffix = !expectedSuffix || (clean.length === 14 && clean.substring(12, 14) === expectedSuffix);
+
+      if (is14Alphanum && matchesSuffix) {
+        if (seenInInput.has(clean)) {
+          duplicateInInputCount++;
+        } else {
+          seenInInput.add(clean);
+          validTokens.push(clean);
+        }
+      } else {
+        invalidTokens.push({
+          token: tok,
+          clean,
+          reason: !is14Alphanum ? 'length_or_char' : 'suffix_mismatch'
+        });
+      }
+    });
+
+    const currentList = this.getAll();
+    const existingSerialMap = new Map();
+    currentList.forEach(item => {
+      existingSerialMap.set(this.normalizeSerial(item.serial), item);
+    });
+
+    const newSerials = [];
+    const existingSerials = [];
+
+    validTokens.forEach(cleanSerial => {
+      if (existingSerialMap.has(cleanSerial)) {
+        existingSerials.push({
+          serial: cleanSerial,
+          existingRecord: existingSerialMap.get(cleanSerial)
+        });
+      } else {
+        newSerials.push({
+          serial: cleanSerial
+        });
+      }
+    });
+
+    return {
+      expectedSuffix,
+      totalTokens: tokens.length,
+      validCount: validTokens.length,
+      newSerials,
+      existingSerials,
+      duplicateInInputCount,
+      invalidCount: invalidTokens.length,
+      invalidSamples: invalidTokens.slice(0, 5)
+    };
+  },
+
+  /**
+   * 複数シリアルの一括登録
+   * @param {Array<string|{serial: string, note?: string}>} items
+   * @param {string} [campaignId]
+   * @param {string} [defaultNote]
+   * @returns {Object} { addedCount, skippedCount, records }
+   */
+  batchAdd(items, campaignId = null, defaultNote = '') {
+    if (!Array.isArray(items) || items.length === 0) {
+      return { addedCount: 0, skippedCount: 0, records: [] };
+    }
+
+    const list = this.getAll();
+    const existingSerials = new Set(list.map(i => this.normalizeSerial(i.serial)));
+
+    const activeCamp = this.getActiveCampaign();
+    const targetCampId = campaignId || activeCamp.id;
+    const campaigns = this.getCampaigns();
+    const targetCamp = campaigns.find(c => c.id === targetCampId) || activeCamp;
+
+    const newRecords = [];
+    let skippedCount = 0;
+
+    items.forEach(item => {
+      const serialStr = typeof item === 'string' ? item : item.serial;
+      const clean = this.normalizeSerial(serialStr);
+      if (!clean || clean.length !== 14 || !/^[A-Z0-9]{14}$/.test(clean)) {
+        skippedCount++;
+        return;
+      }
+
+      if (existingSerials.has(clean)) {
+        skippedCount++;
+        return;
+      }
+
+      const note = (typeof item === 'object' && item.note) ? item.note : defaultNote;
+
+      const record = {
+        id: 'sn_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        serial: clean,
+        rawText: clean,
+        type: '', // 盤種・形態は不要
+        campaignId: targetCamp.id,
+        campaignTitle: targetCamp.title,
+        singleTitle: targetCamp.title,
+        applyUrl: targetCamp.applyUrl,
+        status: 'unused',
+        scanMethod: 'batch_import',
+        createdAt: new Date().toISOString(),
+        usedAt: null,
+        note: note || ''
+      };
+
+      newRecords.push(record);
+      existingSerials.add(clean);
+    });
+
+    if (newRecords.length > 0) {
+      list.unshift(...newRecords);
+      this._saveAll(list);
+
+      // 末尾2文字が作品に未設定なら自動学習
+      this.inferAndSaveCampaignSuffix(targetCamp.id, newRecords[0].serial);
+    }
+
+    return {
+      addedCount: newRecords.length,
+      skippedCount,
+      records: newRecords
+    };
+  },
+
+  /**
    * 既存レコードの更新
    */
   update(id, updates) {
