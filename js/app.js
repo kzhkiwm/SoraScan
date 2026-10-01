@@ -1520,6 +1520,7 @@ class SoraScanApp {
 
   /**
    * Android Chrome向け 超軽量・一括10件入力ブックマークレットコードの生成とコピー
+   * 対象となった最大10件のシリアルを「登録済みコード反映領域」へ自動セット
    */
   copyTinyBookmarkletCode() {
     const campId = this.selectAutoApplyCampaign.value;
@@ -1533,10 +1534,26 @@ class SoraScanApp {
     }
 
     const count = Math.min(unusedList.length, 10);
+    const targetSerials = unusedList.slice(0, count).map(s => (typeof s === 'string' ? s : s.serial).trim().toUpperCase());
     const code = BookmarkletEngine.generateTinyCode(unusedList, camp);
 
+    // 登録済みコードの領域（完了シリアルの応募済反映エリア）に対象10件を自動追加
+    if (this.textAppliedSerialsSync) {
+      const currentVal = this.textAppliedSerialsSync.value.trim();
+      const currentList = currentVal ? currentVal.split(/\s+/).filter(Boolean) : [];
+      
+      const combined = [...currentList];
+      targetSerials.forEach(s => {
+        if (!combined.includes(s)) {
+          combined.push(s);
+        }
+      });
+
+      this.textAppliedSerialsSync.value = combined.join('\n');
+    }
+
     navigator.clipboard.writeText(code).then(() => {
-      this.showToast(`⚡ 【超軽量版】最大${count}件一括コード（${code.length}文字）をコピーしました！`);
+      this.showToast(`⚡ 【超軽量版】${count}件コードをコピー＆反映領域に追加しました！応募後に下の「応募済に更新」を押してください`);
     }).catch(() => {
       prompt('以下のブックマークレットコードをコピーしてください:', code);
     });
