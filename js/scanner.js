@@ -597,7 +597,7 @@ ${suffixHint}
   }
 
   /**
-   * 並べられた複数応募券の写真からGemini 2.0 Flashで全シリアルを一括抽出
+   * 並べられた複数応募券の写真からGemini 3.5 Flash-Liteで全シリアルを一括抽出
    * @param {HTMLImageElement|HTMLVideoElement|Blob|File} source
    * @param {string} apiKey
    * @param {string} [expectedSuffix]
