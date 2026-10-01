@@ -3,6 +3,8 @@
  * Tesseract.js & jsQR によるハイブリッド解析
  */
 
+const GEMINI_MODEL = 'gemini-3.5-flash-lite';
+
 export class ScannerEngine {
   constructor(options = {}) {
     this.videoElement = options.videoElement;
@@ -300,7 +302,7 @@ export class ScannerEngine {
 JSONフォーマット例:
 {"title": "日向坂46 18thシングル『イチャイチャ虫』", "shortTitle": "18th「イチャイチャ虫」", "applyUrl": "https://ticket.fortunemeets.app/hinatazaka46/18th", "period": "2026/09/30 10:00 〜 2026/11/30 23:59", "serial": "JR4KAR7KQ4B8TN"}`;
 
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${options.geminiApiKey}`;
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${options.geminiApiKey}`;
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -487,7 +489,7 @@ ${suffixHint}
 - 上部の説明文やURL（"18th", "SRCL 13850~1", "TYPE-A", "fortunemeets"など）は絶対に無視してください。
 - 余計な説明、前置き、引用符、Markdownは一切含めず、抽出した14文字（例: JR4KAR7KQ4B8TN）のみを出力してください。`;
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
     const payload = {
       contents: [{
@@ -626,7 +628,7 @@ ${suffixHint}
 - 出力は必ずJSONの文字列配列形式（["CODE1", "CODE2", ...]）のみで出力してください。
 - 説明文やMarkdownコードブロックは不要です。純粋なJSON文字列配列のみを出力してください。`;
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
     const payload = {
       contents: [{
@@ -711,19 +713,35 @@ ${suffixHint}
   async recognizeMultipleSerialsWithTesseract(source, expectedSuffix = '') {
     this.onStatusChange({ status: 'processing', message: '端末内OCRで複数シリアルを解析中...' });
 
-    await this.initOCR();
+    const worker = await this.initTesseract();
+
+    // 複数券が散在する全体画像に対応するため SPARSE_TEXT (11) または AUTO (3) を適用
+    try {
+      const psmMode = (Tesseract.PSM && Tesseract.PSM.SPARSE_TEXT) ? Tesseract.PSM.SPARSE_TEXT : 11;
+      await worker.setParameters({
+        tessedit_pageseg_mode: psmMode,
+        tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+      });
+    } catch (e) {
+      console.warn('Tesseract setParameters warning:', e);
+    }
 
     const { dataUrl } = await this._prepareImageBase64ForMultiOcr(source);
 
-    const result = await this.tesseractWorker.recognize(dataUrl);
+    const result = await worker.recognize(dataUrl);
     const fullText = (result.data && result.data.text) ? result.data.text.toUpperCase() : '';
 
+    // 1. 正規表現で14文字英数字の塊を抽出
+    const regexMatches = fullText.match(/\b[A-Z0-9]{14}\b/g) || [];
+    // 2. トークン分割から14文字のものを抽出
     const tokens = fullText.split(/[\s,]+/g).map(t => t.replace(/[^A-Z0-9]/g, ''));
+
+    const allCandidates = [...regexMatches, ...tokens];
     const validSerials = [];
     const seen = new Set();
 
-    tokens.forEach(tok => {
-      let clean = tok.trim();
+    allCandidates.forEach(cand => {
+      let clean = cand.trim();
       if (clean.length === 14 && /^[A-Z0-9]{14}$/.test(clean)) {
         if (expectedSuffix && clean.substring(12, 14) !== expectedSuffix) {
           if (this.isSuffixNearMatch(clean.substring(12, 14), expectedSuffix)) {
