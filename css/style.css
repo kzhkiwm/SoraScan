@@ -1988,4 +1988,21 @@ input:checked + .slider:before {
   color: var(--text-muted);
 }
 
+.scanner-batch-shortcut {
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.scanner-batch-shortcut:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10B981;
+  color: #FFFFFF;
+}
+
 

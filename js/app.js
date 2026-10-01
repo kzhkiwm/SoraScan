@@ -182,7 +182,10 @@ class SoraScanApp {
     this.batchPreviewChips = document.getElementById('batchPreviewChips');
     this.btnExecuteBatchImport = document.getElementById('btnExecuteBatchImport');
 
-    // 写真からの一括OCR関連要素
+    // 写真・カメラからの一括OCR関連要素
+    this.fileBatchImportCamera = document.getElementById('fileBatchImportCamera');
+    this.btnBatchImportCamera = document.getElementById('btnBatchImportCamera');
+    this.btnScannerGoBatchCamera = document.getElementById('btnScannerGoBatchCamera');
     this.fileBatchImportPhoto = document.getElementById('fileBatchImportPhoto');
     this.btnBatchImportPhoto = document.getElementById('btnBatchImportPhoto');
     this.batchOcrLoadingOverlay = document.getElementById('batchOcrLoadingOverlay');
@@ -343,6 +346,25 @@ class SoraScanApp {
     if (this.btnBatchImportPasteClipboard) {
       this.btnBatchImportPasteClipboard.addEventListener('click', () => this.pasteClipboardToBatchImport());
     }
+    // その場でカメラ撮影して一括OCR
+    if (this.btnBatchImportCamera && this.fileBatchImportCamera) {
+      this.btnBatchImportCamera.addEventListener('click', () => this.fileBatchImportCamera.click());
+      this.fileBatchImportCamera.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.executeBatchPhotoOCR(e.target.files[0]);
+        }
+      });
+    }
+    // スキャナ画面から一括カメラ撮影へショートカット
+    if (this.btnScannerGoBatchCamera && this.fileBatchImportCamera) {
+      this.btnScannerGoBatchCamera.addEventListener('click', () => {
+        this.openBatchImportModal();
+        setTimeout(() => {
+          this.fileBatchImportCamera.click();
+        }, 150);
+      });
+    }
+    // 保存済み写真から一括OCR
     if (this.btnBatchImportPhoto && this.fileBatchImportPhoto) {
       this.btnBatchImportPhoto.addEventListener('click', () => this.fileBatchImportPhoto.click());
       this.fileBatchImportPhoto.addEventListener('change', (e) => {
@@ -1993,6 +2015,9 @@ class SoraScanApp {
     if (!file) return;
     if (this.fileBatchImportPhoto) {
       this.fileBatchImportPhoto.value = '';
+    }
+    if (this.fileBatchImportCamera) {
+      this.fileBatchImportCamera.value = '';
     }
 
     const campId = this.selectBatchImportCampaign.value;

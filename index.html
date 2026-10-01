@@ -183,6 +183,15 @@
               </svg>
               手動で入力
             </button>
+
+            <!-- Batch OCR Shortcut for Multiple Tickets -->
+            <button type="button" id="btnScannerGoBatchCamera" class="btn-secondary scanner-batch-shortcut" style="grid-column: 1 / -1; border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.1); color: #6EE7B7;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+              机に並べて一括撮影・OCR登録（複数枚まとめ読取）
+            </button>
           </div>
 
           <!-- Status Pill -->
@@ -951,22 +960,32 @@
           <label class="form-label" for="textareaBatchImportSerials" style="margin-bottom:0;">
             シリアルコード入力
           </label>
-          <div style="display:flex; gap:6px; align-items:center;">
-            <!-- Hidden file input for Multi-Serial Photo OCR -->
+          <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+            <!-- Hidden inputs: Camera (direct) & Album (picker) -->
+            <input type="file" id="fileBatchImportCamera" accept="image/*" capture="environment" style="display:none;">
             <input type="file" id="fileBatchImportPhoto" accept="image/*" style="display:none;">
-            <button type="button" id="btnBatchImportPhoto" class="batch-ocr-btn" title="並べた複数枚の応募券写真から一括OCR読取">
+
+            <button type="button" id="btnBatchImportCamera" class="batch-ocr-btn" title="スマホのカメラで机に並べた応募券をその場で高画質撮影">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
                 <circle cx="12" cy="13" r="4"></circle>
               </svg>
-              📷 写真から一括OCR
+              📸 カメラで撮影
             </button>
-            <button type="button" id="btnBatchImportPasteClipboard" class="batch-paste-btn">
+            <button type="button" id="btnBatchImportPhoto" class="batch-paste-btn" title="保存済み写真・アルバムから選択">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              🖼️ 写真を選択
+            </button>
+            <button type="button" id="btnBatchImportPasteClipboard" class="batch-paste-btn" title="クリップボードから貼り付け">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
               </svg>
-              クリップボード貼付
+              貼付
             </button>
           </div>
         </div>
