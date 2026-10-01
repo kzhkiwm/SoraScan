@@ -914,6 +914,21 @@
           複数スペースや改行で区切られたデータから、<strong>対象作品の末尾2文字に合致する14桁コードのみ</strong>を有効データとして自動抽出します。
         </p>
 
+        <!-- Gemini API Key Guide/Quick Input Banner (shown if not configured) -->
+        <div id="bannerBatchGeminiKey" class="gemini-key-banner" style="display:none; margin-bottom:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+            <div style="font-size:0.76rem; color:#FEF3C7; line-height:1.4;">
+              ✨ <strong>Gemini APIキー</strong>を設定すると、並べた10〜20枚の写真から高精度に全件一括検出できます。<br>
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" style="color:#38BDF8; text-decoration:underline;">Google AI Studioで無料キー取得</a>
+            </div>
+            <button type="button" id="btnDismissGeminiBanner" style="background:none; border:none; color:#AAA; font-size:0.8rem; cursor:pointer;">✕</button>
+          </div>
+          <div style="display:flex; gap:6px; margin-top:8px;">
+            <input type="password" id="inputBatchQuickGeminiKey" class="form-input" style="font-size:0.78rem; padding:6px 10px;" placeholder="AIzaSy... (Gemini APIキーを貼り付け)">
+            <button type="button" id="btnSaveBatchQuickGeminiKey" class="btn-primary" style="padding:6px 12px; font-size:0.75rem; white-space:nowrap;">保存</button>
+          </div>
+        </div>
+
         <!-- Target Campaign Selector & Suffix Info -->
         <div class="form-group" style="margin-bottom:12px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -931,22 +946,45 @@
           <input type="text" id="inputBatchImportNote" class="form-input" placeholder="例: 外部ツール取込分、オンラインミート＆グリート など">
         </div>
 
-        <!-- Input Area Header with Clipboard Paste Button -->
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <!-- Input Area Header with Action Buttons -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
           <label class="form-label" for="textareaBatchImportSerials" style="margin-bottom:0;">
             シリアルコード入力
           </label>
-          <button type="button" id="btnBatchImportPasteClipboard" class="batch-paste-btn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-            クリップボードから貼付
-          </button>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <!-- Hidden file input for Multi-Serial Photo OCR -->
+            <input type="file" id="fileBatchImportPhoto" accept="image/*" style="display:none;">
+            <button type="button" id="btnBatchImportPhoto" class="batch-ocr-btn" title="並べた複数枚の応募券写真から一括OCR読取">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+              📷 写真から一括OCR
+            </button>
+            <button type="button" id="btnBatchImportPasteClipboard" class="batch-paste-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              クリップボード貼付
+            </button>
+          </div>
         </div>
 
-        <!-- Textarea -->
-        <textarea id="textareaBatchImportSerials" class="form-textarea batch-import-textarea" rows="6" placeholder="複数スペースまたは改行区切りのシリアルコードを貼り付けてください&#10;&#10;例:&#10;JR4KAR7KQ4B8TN   99H1J6S8K9L0TN&#10;ABCD1234EF56TN" spellcheck="false" autocomplete="off"></textarea>
+        <!-- Relative Container for Textarea & Loading Overlay -->
+        <div style="position:relative;">
+          <!-- Textarea -->
+          <textarea id="textareaBatchImportSerials" class="form-textarea batch-import-textarea" rows="6" placeholder="複数スペースまたは改行区切りのシリアルコードを貼り付けてください&#10;&#10;例:&#10;JR4KAR7KQ4B8TN   99H1J6S8K9L0TN&#10;ABCD1234EF56TN" spellcheck="false" autocomplete="off"></textarea>
+
+          <!-- Batch OCR Loading Overlay -->
+          <div id="batchOcrLoadingOverlay" class="batch-loading-overlay" style="display:none;">
+            <div class="batch-loading-card">
+              <div class="batch-spinner"></div>
+              <div class="batch-loading-title" id="batchOcrLoadingTitle">Gemini AIで複数シリアルを一括解析中...</div>
+              <div class="batch-loading-desc" id="batchOcrLoadingDesc">画像内のすべての応募券を検出しています（数秒かかります）</div>
+            </div>
+          </div>
+        </div>
 
         <!-- Live Validation Summary Bar -->
         <div class="batch-summary-card" id="batchImportSummary">

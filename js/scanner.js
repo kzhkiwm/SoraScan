@@ -549,6 +549,203 @@ ${suffixHint}
   }
 
   /**
+   * 複数画像解析用に適正サイズへ調整したBase64 JPEGデータを生成
+   * @param {HTMLImageElement|HTMLVideoElement|Blob|File} source
+   * @returns {Promise<{dataUrl: string, base64Data: string, width: number, height: number}>}
+   */
+  async _prepareImageBase64ForMultiOcr(source) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    let img;
+
+    if (source instanceof Blob || source instanceof File) {
+      img = await this._loadImageFromFile(source);
+    } else if (source instanceof HTMLImageElement || source instanceof HTMLCanvasElement || source instanceof HTMLVideoElement) {
+      img = source;
+    } else {
+      throw new Error('サポートされていない画像形式です');
+    }
+
+    let w = img.videoWidth || img.naturalWidth || img.width;
+    let h = img.videoHeight || img.naturalHeight || img.height;
+
+    // 長辺最大 2400px にリサイズして通信容量と解析時間を最適化
+    const maxDim = 2400;
+    if (w > maxDim || h > maxDim) {
+      if (w > h) {
+        h = Math.round((h * maxDim) / w);
+        w = maxDim;
+      } else {
+        w = Math.round((w * maxDim) / h);
+        h = maxDim;
+      }
+    }
+
+    canvas.width = w;
+    canvas.height = h;
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    return {
+      dataUrl,
+      base64Data: dataUrl.split(',')[1],
+      width: w,
+      height: h
+    };
+  }
+
+  /**
+   * 並べられた複数応募券の写真からGemini 2.0 Flashで全シリアルを一括抽出
+   * @param {HTMLImageElement|HTMLVideoElement|Blob|File} source
+   * @param {string} apiKey
+   * @param {string} [expectedSuffix]
+   * @returns {Promise<{serials: string[], rawText: string}>}
+   */
+  async recognizeMultipleSerialsWithGemini(source, apiKey, expectedSuffix = '') {
+    if (!apiKey) throw new Error('Gemini APIキーが設定されていません');
+
+    this.onStatusChange({ status: 'processing', message: 'Gemini AIで複数のシリアルを一括解析中...' });
+
+    const { base64Data } = await this._prepareImageBase64ForMultiOcr(source);
+
+    const suffixHint = (expectedSuffix && expectedSuffix.length === 2)
+      ? `\n【作品固有の確定情報（超重要ヒント）】\n- 対象作品のシリアルナンバーは、末尾2文字が必ず「${expectedSuffix}」です。\n- 各シリアルの末尾2文字は「${expectedSuffix}」であることを前提に照合し、類似文字（TとI/1/7、NとM/H、8とBなど）の誤読を防いでください。\n`
+      : '';
+
+    const prompt = `日向坂46のCD封入スペシャル抽選応募シリアルナンバーの応募券が複数枚並べられた画像です。
+机や床の上に複数の応募券（シリアルナンバー枠）が並べて撮影されています。
+${suffixHint}
+【レイアウトとシリアルの特徴】
+- 各券面の下部に「四角い枠線（シリアルボックス）」があり、枠線内に大きなフォントで横1行に印字されている【英大文字と数字の連続する14文字（ハイフンなし）】（例: "JR4KAR7KQ4B8TN"）があります。
+- 各コードは必ず英数字14文字で構成されています。${expectedSuffix ? `また末尾2文字は「${expectedSuffix}」です。` : ''}
+- 「0（数字のゼロ）」と「O（アルファベットのオー）」、「1（数字のイチ）」と「I（アルファベットのアイ）」、「8（数字のハチ）」と「B（アルファベットのビー）」、「3（数字のサン）」と「S（アルファベットのエス）」、「5（数字のゴ）」と「S（アルファベットのエス）」をフォント形状から厳密に見分けてください。
+
+【指示】
+- 画像内に写っているすべての応募券から、14文字のシリアルコードを1件も漏らさずにすべて抽出してください。
+- 読み取り順序は、視覚的な配置順（上から下、左から右）で並べてください。
+- 出力は必ずJSONの文字列配列形式（["CODE1", "CODE2", ...]）のみで出力してください。
+- 説明文やMarkdownコードブロックは不要です。純粋なJSON文字列配列のみを出力してください。`;
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+    const payload = {
+      contents: [{
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: 'image/jpeg',
+              data: base64Data
+            }
+          }
+        ]
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json'
+      }
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errJson = await response.json().catch(() => ({}));
+      throw new Error(errJson.error?.message || `Gemini API エラー: HTTP ${response.status}`);
+    }
+
+    const resJson = await response.json();
+    const candidateText = resJson.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
+
+    let serials = [];
+    try {
+      const parsed = JSON.parse(candidateText);
+      if (Array.isArray(parsed)) {
+        serials = parsed.map(s => String(s).toUpperCase().replace(/[^A-Z0-9]/g, ''));
+      }
+    } catch (e) {
+      // JSONパース失敗時のフォールバック: 正規表現で14文字英数字を抽出
+      const matches = candidateText.match(/\b[A-Z0-9]{14}\b/gi);
+      if (matches) {
+        serials = matches.map(s => s.toUpperCase());
+      }
+    }
+
+    // フィルタリングと補正
+    const validSerials = [];
+    const seen = new Set();
+    serials.forEach(code => {
+      let clean = code.trim().toUpperCase();
+      if (clean.length === 14 && /^[A-Z0-9]{14}$/.test(clean)) {
+        // 末尾2文字の類似補正
+        if (expectedSuffix && expectedSuffix.length === 2) {
+          const tail = clean.substring(12, 14);
+          if (tail !== expectedSuffix && this.isSuffixNearMatch(tail, expectedSuffix)) {
+            clean = clean.substring(0, 12) + expectedSuffix;
+          }
+        }
+        if (!seen.has(clean)) {
+          seen.add(clean);
+          validSerials.push(clean);
+        }
+      }
+    });
+
+    this.onStatusChange({ status: 'done', message: `Gemini AI解析完了: ${validSerials.length}件検出` });
+
+    return {
+      serials: validSerials,
+      rawText: candidateText
+    };
+  }
+
+  /**
+   * Tesseract.js による端末内複数シリアルOCR（フォールバック）
+   * @param {HTMLImageElement|HTMLVideoElement|Blob|File} source
+   * @param {string} [expectedSuffix]
+   * @returns {Promise<{serials: string[], rawText: string}>}
+   */
+  async recognizeMultipleSerialsWithTesseract(source, expectedSuffix = '') {
+    this.onStatusChange({ status: 'processing', message: '端末内OCRで複数シリアルを解析中...' });
+
+    await this.initOCR();
+
+    const { dataUrl } = await this._prepareImageBase64ForMultiOcr(source);
+
+    const result = await this.tesseractWorker.recognize(dataUrl);
+    const fullText = (result.data && result.data.text) ? result.data.text.toUpperCase() : '';
+
+    const tokens = fullText.split(/[\s,]+/g).map(t => t.replace(/[^A-Z0-9]/g, ''));
+    const validSerials = [];
+    const seen = new Set();
+
+    tokens.forEach(tok => {
+      let clean = tok.trim();
+      if (clean.length === 14 && /^[A-Z0-9]{14}$/.test(clean)) {
+        if (expectedSuffix && clean.substring(12, 14) !== expectedSuffix) {
+          if (this.isSuffixNearMatch(clean.substring(12, 14), expectedSuffix)) {
+            clean = clean.substring(0, 12) + expectedSuffix;
+          }
+        }
+        if (!seen.has(clean)) {
+          seen.add(clean);
+          validSerials.push(clean);
+        }
+      }
+    });
+
+    this.onStatusChange({ status: 'done', message: `端末内OCR完了: ${validSerials.length}件検出` });
+
+    return {
+      serials: validSerials,
+      rawText: fullText
+    };
+  }
+
+  /**
    * 現在のカメラプレビューまたは画像ファイルからOCR文字認識を実行
    * @param {HTMLImageElement|HTMLVideoElement|Blob|File} source
    * @param {Object} options - { cropToGuide, geminiApiKey, expectedSuffix, onProgress }

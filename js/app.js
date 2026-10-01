@@ -182,6 +182,17 @@ class SoraScanApp {
     this.batchPreviewChips = document.getElementById('batchPreviewChips');
     this.btnExecuteBatchImport = document.getElementById('btnExecuteBatchImport');
 
+    // 写真からの一括OCR関連要素
+    this.fileBatchImportPhoto = document.getElementById('fileBatchImportPhoto');
+    this.btnBatchImportPhoto = document.getElementById('btnBatchImportPhoto');
+    this.batchOcrLoadingOverlay = document.getElementById('batchOcrLoadingOverlay');
+    this.batchOcrLoadingTitle = document.getElementById('batchOcrLoadingTitle');
+    this.batchOcrLoadingDesc = document.getElementById('batchOcrLoadingDesc');
+    this.bannerBatchGeminiKey = document.getElementById('bannerBatchGeminiKey');
+    this.btnDismissGeminiBanner = document.getElementById('btnDismissGeminiBanner');
+    this.inputBatchQuickGeminiKey = document.getElementById('inputBatchQuickGeminiKey');
+    this.btnSaveBatchQuickGeminiKey = document.getElementById('btnSaveBatchQuickGeminiKey');
+
     // トースト
     this.toastContainer = document.getElementById('toastContainer');
   }
@@ -331,6 +342,22 @@ class SoraScanApp {
     }
     if (this.btnBatchImportPasteClipboard) {
       this.btnBatchImportPasteClipboard.addEventListener('click', () => this.pasteClipboardToBatchImport());
+    }
+    if (this.btnBatchImportPhoto && this.fileBatchImportPhoto) {
+      this.btnBatchImportPhoto.addEventListener('click', () => this.fileBatchImportPhoto.click());
+      this.fileBatchImportPhoto.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.executeBatchPhotoOCR(e.target.files[0]);
+        }
+      });
+    }
+    if (this.btnDismissGeminiBanner && this.bannerBatchGeminiKey) {
+      this.btnDismissGeminiBanner.addEventListener('click', () => {
+        this.bannerBatchGeminiKey.style.display = 'none';
+      });
+    }
+    if (this.btnSaveBatchQuickGeminiKey) {
+      this.btnSaveBatchQuickGeminiKey.addEventListener('click', () => this.saveQuickGeminiKey());
     }
     if (this.btnExecuteBatchImport) {
       this.btnExecuteBatchImport.addEventListener('click', () => this.executeBatchImport());
@@ -1786,6 +1813,12 @@ class SoraScanApp {
     this.updateBatchImportSuffixBadge();
     this.updateBatchImportAnalysis();
 
+    // Gemini APIキー未設定なら案内バナーを表示
+    const apiKey = Storage.getSettings().geminiApiKey;
+    if (this.bannerBatchGeminiKey) {
+      this.bannerBatchGeminiKey.style.display = (!apiKey || !apiKey.trim()) ? 'block' : 'none';
+    }
+
     this.modalBatchImport.classList.add('open');
     setTimeout(() => {
       this.textareaBatchImportSerials.focus();
@@ -1930,6 +1963,86 @@ class SoraScanApp {
       this.renderList();
     } else {
       this.showToast('⚠️ 登録できるシリアルがありませんでした');
+    }
+  }
+
+  /**
+   * 一括登録モーダル内のクイックGemini APIキー保存
+   */
+  saveQuickGeminiKey() {
+    const val = this.inputBatchQuickGeminiKey ? this.inputBatchQuickGeminiKey.value.trim() : '';
+    if (!val) {
+      this.showToast('⚠️ APIキーを入力してください');
+      return;
+    }
+    Storage.saveSettings({ geminiApiKey: val });
+    if (this.inputGeminiApiKey) {
+      this.inputGeminiApiKey.value = val;
+    }
+    if (this.bannerBatchGeminiKey) {
+      this.bannerBatchGeminiKey.style.display = 'none';
+    }
+    this.showToast('✨ Gemini APIキーを保存しました！高精度一括解析が有効です');
+  }
+
+  /**
+   * 写真（複数並べた券面）からの一括OCR読取実行
+   * @param {File} file
+   */
+  async executeBatchPhotoOCR(file) {
+    if (!file) return;
+    if (this.fileBatchImportPhoto) {
+      this.fileBatchImportPhoto.value = '';
+    }
+
+    const campId = this.selectBatchImportCampaign.value;
+    const suffix = Storage.getCampaignSuffix(campId);
+    const apiKey = Storage.getSettings().geminiApiKey;
+
+    if (this.batchOcrLoadingOverlay) {
+      if (apiKey) {
+        this.batchOcrLoadingTitle.textContent = 'Gemini AIで複数シリアルを一括解析中...';
+        this.batchOcrLoadingDesc.textContent = suffix
+          ? `末尾「${suffix}」を条件に画像内のすべての券面を検出しています`
+          : '画像内のすべての応募券を検出しています（数秒かかります）';
+      } else {
+        this.batchOcrLoadingTitle.textContent = '端末内OCRで解析中...';
+        this.batchOcrLoadingDesc.textContent = '文字を認識中... (高精度な一括検出にはGeminiキー推奨)';
+      }
+      this.batchOcrLoadingOverlay.style.display = 'flex';
+    }
+
+    try {
+      let result;
+      if (apiKey) {
+        result = await this.scanner.recognizeMultipleSerialsWithGemini(file, apiKey, suffix);
+      } else {
+        result = await this.scanner.recognizeMultipleSerialsWithTesseract(file, suffix);
+      }
+
+      const serials = (result && result.serials) ? result.serials : [];
+
+      if (serials.length > 0) {
+        // テキストエリアに改行区切りで反映（既存の内容があれば末尾に追加）
+        const currentText = this.textareaBatchImportSerials.value.trim();
+        const joinedCodes = serials.join('\n');
+        this.textareaBatchImportSerials.value = currentText ? `${currentText}\n${joinedCodes}` : joinedCodes;
+
+        this.updateBatchImportAnalysis();
+        this.showToast(`🎉 画像から ${serials.length} 件のシリアルナンバーを検出しました！`);
+      } else {
+        this.showToast('⚠️ 有効なシリアルコードを検出できませんでした。より正面から明るい場所で撮影してください');
+        if (!apiKey && this.bannerBatchGeminiKey) {
+          this.bannerBatchGeminiKey.style.display = 'block';
+        }
+      }
+    } catch (err) {
+      console.error('Batch Photo OCR failed:', err);
+      this.showToast(`⚠️ 一括OCR解析に失敗しました: ${err.message || '通信エラー'}`);
+    } finally {
+      if (this.batchOcrLoadingOverlay) {
+        this.batchOcrLoadingOverlay.style.display = 'none';
+      }
     }
   }
 
